@@ -91,15 +91,35 @@ client.once('ready', async () => {
 
 // ── 自動建立頻道與角色 ──
 async function setupChannels(guild) {
+  // ── 分類定義 ──
+  const categoryDefs = [
+    { key: 'catPublic', name: '🎮 暗區社群（公開）' },
+    { key: 'catBusiness', name: '🌙 午夜俱樂部（接單）' },
+    { key: 'catInternal', name: '🔒 內部管理' },
+  ];
+
+  // ── 頻道定義（含分類歸屬） ──
   const channelDefs = [
-    { key: 'announcements', name: '📢｜公告', topic: '系統公告與重要通知' },
-    { key: 'newOrders', name: '🔔｜新訂單', topic: '新訂單自動推送，打手在此接單' },
-    { key: 'activeOrders', name: '⚡｜進行中', topic: '已接受的訂單追蹤' },
-    { key: 'completed', name: '✅｜已完成', topic: '完成的訂單紀錄' },
-    { key: 'boosterChat', name: '💬｜打手聊天', topic: '打手內部溝通' },
-    { key: 'dailyStats', name: '📊｜每日報表', topic: '每日自動業務摘要' },
-    { key: 'customerLobby', name: '🎮｜老闆大廳', topic: '客戶公開聊天區' },
-    { key: 'vipLounge', name: '👑｜VIP專區', topic: 'VIP 會員專屬頻道' },
+    // 公開社群區 — 所有人可見，吸引玩家
+    { key: 'welcome', name: '👋｜歡迎光臨', topic: '新人必看！俱樂部介紹與規則', cat: 'catPublic' },
+    { key: 'announcements', name: '📢｜公告', topic: '系統公告與重要通知', cat: 'catPublic' },
+    { key: 'chat', name: '💬｜閒聊吹水', topic: '暗區玩家自由聊天', cat: 'catPublic' },
+    { key: 'gameChat', name: '🔫｜暗區攻略', topic: '地圖攻略、武器討論、打法分享', cat: 'catPublic' },
+    { key: 'showoff', name: '🏆｜戰績曬單', topic: '曬你的大金、神裝、滿載撤離！', cat: 'catPublic' },
+    { key: 'memes', name: '😂｜迷因梗圖', topic: '暗區搞笑圖片影片', cat: 'catPublic' },
+    { key: 'lfg', name: '🎯｜組隊找人', topic: '找人一起打暗區', cat: 'catPublic' },
+    { key: 'priceList', name: '💰｜報價表', topic: '代練服務報價一覽（唯讀）', cat: 'catPublic' },
+    { key: 'reviews', name: '⭐｜好評曬單', topic: '客戶完成截圖與好評', cat: 'catPublic' },
+    // 接單系統 — 客戶與打手互動
+    { key: 'newOrders', name: '🔔｜新訂單', topic: '新訂單自動推送，打手在此接單', cat: 'catBusiness' },
+    { key: 'activeOrders', name: '⚡｜進行中', topic: '已接受的訂單追蹤', cat: 'catBusiness' },
+    { key: 'completed', name: '✅｜已完成', topic: '完成的訂單紀錄', cat: 'catBusiness' },
+    { key: 'customerLobby', name: '🎮｜老闆大廳', topic: '下單客戶聊天與溝通', cat: 'catBusiness' },
+    { key: 'vipLounge', name: '👑｜VIP專區', topic: 'VIP 會員專屬頻道', cat: 'catBusiness' },
+    // 內部管理 — 僅 Boss 和 Booster 可見
+    { key: 'boosterChat', name: '💬｜打手聊天', topic: '打手內部溝通', cat: 'catInternal' },
+    { key: 'dailyStats', name: '📊｜每日報表', topic: '每日自動業務摘要', cat: 'catInternal' },
+    { key: 'adminLog', name: '📋｜管理日誌', topic: '系統操作紀錄', cat: 'catInternal' },
   ];
 
   // 建立角色（如果不存在）
@@ -124,34 +144,118 @@ async function setupChannels(guild) {
   }
 
   // 建立分類
-  let category = guild.channels.cache.find(
-    c => c.name === '🌙 午夜俱樂部系統' && c.type === ChannelType.GuildCategory
-  );
-  if (!category) {
-    category = await guild.channels.create({
-      name: '🌙 午夜俱樂部系統',
-      type: ChannelType.GuildCategory,
-      reason: 'MK-01 自動建立'
-    });
-    console.log('✅ 已建立分類：🌙 午夜俱樂部系統');
+  const categories = {};
+  for (const catDef of categoryDefs) {
+    let cat = guild.channels.cache.find(
+      c => c.name === catDef.name && c.type === ChannelType.GuildCategory
+    );
+    if (!cat) {
+      const boosterRole = guild.roles.cache.find(r => r.name === 'Booster');
+      const bossRole = guild.roles.cache.find(r => r.name === 'Boss');
+      const perms = [];
+
+      // 內部管理分類：僅 Boss 和 Booster 可見
+      if (catDef.key === 'catInternal') {
+        perms.push(
+          { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+        );
+        if (boosterRole) perms.push({ id: boosterRole.id, allow: [PermissionFlagsBits.ViewChannel] });
+        if (bossRole) perms.push({ id: bossRole.id, allow: [PermissionFlagsBits.ViewChannel] });
+      }
+
+      cat = await guild.channels.create({
+        name: catDef.name,
+        type: ChannelType.GuildCategory,
+        permissionOverwrites: perms.length ? perms : undefined,
+        reason: 'MK-01 自動建立'
+      });
+      console.log(`✅ 已建立分類：${catDef.name}`);
+    }
+    categories[catDef.key] = cat.id;
   }
 
   // 建立頻道
   for (const cd of channelDefs) {
+    const parentId = categories[cd.cat] || categories.catPublic;
     let ch = guild.channels.cache.find(
-      c => c.name === cd.name && c.parentId === category.id
+      c => c.name === cd.name && c.parentId === parentId
     );
     if (!ch) {
+      const chPerms = [];
+      // 報價表設為唯讀
+      if (cd.key === 'priceList') {
+        chPerms.push({ id: guild.id, deny: [PermissionFlagsBits.SendMessages] });
+      }
+      // VIP 專區限 VIP 角色
+      if (cd.key === 'vipLounge') {
+        const vipRole = guild.roles.cache.find(r => r.name === 'VIP客戶');
+        chPerms.push({ id: guild.id, deny: [PermissionFlagsBits.ViewChannel] });
+        if (vipRole) chPerms.push({ id: vipRole.id, allow: [PermissionFlagsBits.ViewChannel] });
+        const bossRole = guild.roles.cache.find(r => r.name === 'Boss');
+        if (bossRole) chPerms.push({ id: bossRole.id, allow: [PermissionFlagsBits.ViewChannel] });
+      }
+
       ch = await guild.channels.create({
         name: cd.name,
         type: ChannelType.GuildText,
-        parent: category.id,
+        parent: parentId,
         topic: cd.topic,
+        permissionOverwrites: chPerms.length ? chPerms : undefined,
         reason: 'MK-01 自動建立'
       });
       console.log(`✅ 已建立頻道：${cd.name}`);
     }
     channels[cd.key] = ch.id;
+  }
+
+  // ── 自動發送歡迎訊息到 #welcome ──
+  if (channels.welcome) {
+    const wCh = guild.channels.cache.get(channels.welcome);
+    if (wCh) {
+      const msgs = await wCh.messages.fetch({ limit: 1 });
+      if (msgs.size === 0) {
+        const embed = new EmbedBuilder()
+          .setColor(0x8b5cf6)
+          .setTitle('🌙 歡迎來到午夜俱樂部')
+          .setDescription(
+            '**暗區突圍：無限** 最強代練俱樂部\n\n' +
+            '🛡️ 護航帶刷 · 🧹 清圖開局 · 🎲 摸保險\n' +
+            '💰 對賭大金 · 🧬 3x3代肝 · 🎮 陪玩\n\n' +
+            '━━━━━━━━━━━━━━\n' +
+            '**頻道導覽：**\n' +
+            '💬 `閒聊吹水` — 自由聊天\n' +
+            '🔫 `暗區攻略` — 地圖、武器、打法討論\n' +
+            '🏆 `戰績曬單` — 曬你的戰績！\n' +
+            '🎯 `組隊找人` — 找隊友一起打\n' +
+            '💰 `報價表` — 代練服務報價\n' +
+            '⭐ `好評曬單` — 看看其他老闆的評價\n\n' +
+            '━━━━━━━━━━━━━━\n' +
+            '**想下單？** 到 `💰報價表` 看服務，或直接加 LINE：**23roger02**\n' +
+            '**追繳三重賠付** — 全額退 + 1000T + 2625點卷！'
+          )
+          .setFooter({ text: '純綠玩 · 全程可直播 · 自家打手不外聘' });
+        wCh.send({ embeds: [embed] });
+      }
+    }
+  }
+
+  // ── 自動發送報價表到 #priceList ──
+  if (channels.priceList) {
+    const pCh = guild.channels.cache.get(channels.priceList);
+    if (pCh) {
+      const msgs = await pCh.messages.fetch({ limit: 1 });
+      if (msgs.size === 0) {
+        const e1 = new EmbedBuilder().setColor(0x00e5ff).setTitle('🛡️ 護航單（包鑰匙·不卡保底·無封頂·追繳三重賠付）')
+          .setDescription('```\nE-1  750T  → 保底 1,388萬\nE-2  1,200T → 保底 2,588萬\nE-3  1,700T → 保底 3,788萬\nE-4  2,200T → 保底 4,888萬 🔥\nE-5  3,200T → 保底 7,388萬 🔥\nE-6  4,000T → 保底 1億\nE-7  6,000T → 保底 1.5億\nE-8  7,900T → 保底 2億\n```\n🎁 護航買五送一！');
+        const e2 = new EmbedBuilder().setColor(0xfbbf24).setTitle('🧹 清圖 · 🎲 摸保險 · 💰 對賭')
+          .setDescription('```\n清圖：\nC-1 電台    520T/局\nC-2 王牌  1,000T/局 🔥\nC-3 主教練 1,200T/局\n\n摸保險：\nI-1  10個   800T → 保底 1,000萬\nI-2  50個  4,000T → 保底 4,500萬\nI-3 100個  7,000T → 保底 8,000萬\n\n對賭：\nG-1 單局單大金     550T\nG-2 帶出1500萬  6,888T 🔥\nG-3 指定大金    5,400T\n```');
+        const e3 = new EmbedBuilder().setColor(0xec4899).setTitle('🗺️ 特殊地圖 · 🧬 代肝 · 🎮 陪玩')
+          .setDescription('```\n特殊地圖：\nS-1 機密文件 4,100T → 保底 6,888萬 🔥\nS-2 理想國   2,680T → 保底 3,999萬 🔥\n\n代肝：\nA-1 S5 3x3  2,800T（3天60任務）🔥\nA-2 單日8H  1,200T\nA-3 週套餐  7,500T\n\n陪玩：\nP-1 男陪 350T/H\nP-2 女陪 350T/H\nP-3 套餐 3,688T（10H+60任務）🔥\nP-4 救急 260T\n```');
+        const e4 = new EmbedBuilder().setColor(0x34d399).setTitle('📋 下單方式')
+          .setDescription('**報編號就能下單！**\n\n1️⃣ 記住你要的編號（如 E-4、C-2）\n2️⃣ 加 LINE：**23roger02**\n3️⃣ 報編號，秒回確認\n4️⃣ LINE Pay / 街口 / 轉帳\n\n🔥 **追繳三重賠付：全額退 + 1000T + 2625點卷**');
+        await pCh.send({ embeds: [e1, e2, e3, e4] });
+      }
+    }
   }
 
   console.log('🌙 頻道設定完成');
