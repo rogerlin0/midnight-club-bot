@@ -94,6 +94,7 @@ async function setupChannels(guild) {
   // ── 分類定義 ──
   const categoryDefs = [
     { key: 'catPublic', name: '🎮 暗區社群（公開）' },
+    { key: 'catVoice', name: '🔊 語音頻道' },
     { key: 'catBusiness', name: '🌙 午夜俱樂部（接單）' },
     { key: 'catInternal', name: '🔒 內部管理' },
   ];
@@ -110,6 +111,22 @@ async function setupChannels(guild) {
     { key: 'lfg', name: '🎯｜組隊找人', topic: '找人一起打暗區', cat: 'catPublic' },
     { key: 'priceList', name: '💰｜報價表', topic: '代練服務報價一覽（唯讀）', cat: 'catPublic' },
     { key: 'reviews', name: '⭐｜好評曬單', topic: '客戶完成截圖與好評', cat: 'catPublic' },
+    // 語音頻道區 — 分三層：一般玩家 / 老闆專屬 / VIP 尊享
+    // 一般玩家（所有人可進）
+    { key: 'vcLobby', name: '🔊｜大廳聊天', topic: null, cat: 'catVoice', voice: true },
+    { key: 'vcTeam1', name: '🎯｜組隊 1', topic: null, cat: 'catVoice', voice: true },
+    { key: 'vcTeam2', name: '🎯｜組隊 2', topic: null, cat: 'catVoice', voice: true },
+    { key: 'vcTeam3', name: '🎯｜組隊 3', topic: null, cat: 'catVoice', voice: true },
+    { key: 'vcChill', name: '🎵｜音樂放鬆', topic: null, cat: 'catVoice', voice: true },
+    // 老闆專屬（客戶角色以上）
+    { key: 'vcBoss1', name: '🎮｜老闆開黑 1', topic: null, cat: 'catVoice', voice: true, clientOnly: true },
+    { key: 'vcBoss2', name: '🎮｜老闆開黑 2', topic: null, cat: 'catVoice', voice: true, clientOnly: true },
+    { key: 'vcBoost1', name: '🛡️｜代練作業 1', topic: null, cat: 'catVoice', voice: true, clientOnly: true },
+    { key: 'vcBoost2', name: '🛡️｜代練作業 2', topic: null, cat: 'catVoice', voice: true, clientOnly: true },
+    // VIP 尊享（VIP 角色限定）
+    { key: 'vcVip1', name: '👑｜VIP 包廂 1', topic: null, cat: 'catVoice', voice: true, vipOnly: true },
+    { key: 'vcVip2', name: '👑｜VIP 包廂 2', topic: null, cat: 'catVoice', voice: true, vipOnly: true },
+    { key: 'vcVipRanked', name: '💎｜VIP 競技房', topic: null, cat: 'catVoice', voice: true, vipOnly: true },
     // 接單系統 — 客戶與打手互動
     { key: 'newOrders', name: '🔔｜新訂單', topic: '新訂單自動推送，打手在此接單', cat: 'catBusiness' },
     { key: 'activeOrders', name: '⚡｜進行中', topic: '已接受的訂單追蹤', cat: 'catBusiness' },
@@ -177,6 +194,7 @@ async function setupChannels(guild) {
   // 建立頻道
   for (const cd of channelDefs) {
     const parentId = categories[cd.cat] || categories.catPublic;
+    const chType = cd.voice ? ChannelType.GuildVoice : ChannelType.GuildText;
     let ch = guild.channels.cache.find(
       c => c.name === cd.name && c.parentId === parentId
     );
@@ -186,24 +204,44 @@ async function setupChannels(guild) {
       if (cd.key === 'priceList') {
         chPerms.push({ id: guild.id, deny: [PermissionFlagsBits.SendMessages] });
       }
-      // VIP 專區限 VIP 角色
-      if (cd.key === 'vipLounge') {
+      // 老闆專屬（客戶+VIP+Booster+Boss 可見，一般玩家不可見）
+      if (cd.clientOnly) {
+        const clientRole = guild.roles.cache.find(r => r.name === '客戶');
         const vipRole = guild.roles.cache.find(r => r.name === 'VIP客戶');
-        chPerms.push({ id: guild.id, deny: [PermissionFlagsBits.ViewChannel] });
-        if (vipRole) chPerms.push({ id: vipRole.id, allow: [PermissionFlagsBits.ViewChannel] });
         const bossRole = guild.roles.cache.find(r => r.name === 'Boss');
-        if (bossRole) chPerms.push({ id: bossRole.id, allow: [PermissionFlagsBits.ViewChannel] });
+        const boosterRole = guild.roles.cache.find(r => r.name === 'Booster');
+        chPerms.push({ id: guild.id, deny: [PermissionFlagsBits.ViewChannel] });
+        if (clientRole) chPerms.push({ id: clientRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] });
+        if (vipRole) chPerms.push({ id: vipRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] });
+        if (bossRole) chPerms.push({ id: bossRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] });
+        if (boosterRole) chPerms.push({ id: boosterRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] });
+      }
+      // VIP 尊享（僅 VIP+Boss+Booster 可見）
+      if (cd.key === 'vipLounge' || cd.vipOnly) {
+        const vipRole = guild.roles.cache.find(r => r.name === 'VIP客戶');
+        const bossRole = guild.roles.cache.find(r => r.name === 'Boss');
+        const boosterRole = guild.roles.cache.find(r => r.name === 'Booster');
+        chPerms.push({ id: guild.id, deny: [PermissionFlagsBits.ViewChannel] });
+        if (vipRole) chPerms.push({ id: vipRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] });
+        if (bossRole) chPerms.push({ id: bossRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] });
+        if (boosterRole) chPerms.push({ id: boosterRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] });
       }
 
-      ch = await guild.channels.create({
+      const opts = {
         name: cd.name,
-        type: ChannelType.GuildText,
+        type: chType,
         parent: parentId,
-        topic: cd.topic,
         permissionOverwrites: chPerms.length ? chPerms : undefined,
         reason: 'MK-01 自動建立'
-      });
-      console.log(`✅ 已建立頻道：${cd.name}`);
+      };
+      if (cd.topic && !cd.voice) opts.topic = cd.topic;
+      // 語音頻道設定人數上限
+      if (cd.voice && (cd.key.startsWith('vcTeam') || cd.key.startsWith('vcBoost'))) {
+        opts.userLimit = 5; // 暗區突圍最多 5 人一隊
+      }
+
+      ch = await guild.channels.create(opts);
+      console.log(`✅ 已建立${cd.voice ? '語音' : '文字'}頻道：${cd.name}`);
     }
     channels[cd.key] = ch.id;
   }
