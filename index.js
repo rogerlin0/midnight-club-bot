@@ -1,11 +1,14 @@
 // ============================================================
-// 🌙 午夜俱樂部 MK-01 自動接單系統 v2.0
-// Discord Bot + Telegram 通知 + 網站 API + 每日報表
+// 🌙 午夜俱樂部 MK-01 自動接單系統 v3.0
+// Discord Bot + Telegram + 網站 API + 每日報表
+// + 驗證系統 + 排行榜 + 工單 + 每日優惠 + VIP升級公告
+// + VIP查詢API + 即時訂單API + 8591報價同步
 // ============================================================
 
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder,
   ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits,
-  StringSelectMenuBuilder } = require('discord.js');
+  StringSelectMenuBuilder, ModalBuilder, TextInputBuilder,
+  TextInputStyle } = require('discord.js');
 const express = require('express');
 const cron = require('node-cron');
 const fetch = require('node-fetch');
@@ -17,44 +20,80 @@ const TG_TOKEN = process.env.TELEGRAM_TOKEN;
 const TG_CHAT = process.env.TELEGRAM_CHAT_ID;
 const PORT = process.env.PORT || 3000;
 
-// ── 訂單資料庫（記憶體，重啟會清空，正式版可接 MongoDB） ──
+// ── 資料庫（記憶體，正式版接 MongoDB） ──
 const orders = new Map();
-const orderMessages = new Map(); // 追蹤訂單對應的 Discord 訊息，用於刪除
+const orderMessages = new Map();
 let orderCounter = 1000;
 const dailyStats = { revenue: 0, count: 0, services: {} };
+
+// ── VIP 客戶資料庫 ──
+const vipData = new Map(); // key: contactId, value: { totalSpent, tier, orders:[], name }
+
+// ── 打手排行榜資料 ──
+const boosterStats = new Map(); // key: odiscord usertag, value: { completed, revenue, name }
+
+// ── 工單資料庫 ──
+const tickets = new Map();
+let ticketCounter = 0;
 
 // ── 頻道 ID 快取 ──
 const channels = {};
 
 // ── 服務報價表 ──
 const SERVICES = {
-  'E-1': { name: '護航①', price: 750, guarantee: '1,388萬' },
-  'E-2': { name: '護航②', price: 1200, guarantee: '2,588萬' },
-  'E-3': { name: '護航③', price: 1700, guarantee: '3,788萬' },
-  'E-4': { name: '護航④', price: 2200, guarantee: '4,888萬' },
-  'E-5': { name: '護航⑤', price: 3200, guarantee: '7,388萬' },
-  'E-6': { name: '護航⑥', price: 4000, guarantee: '1億' },
-  'E-7': { name: '護航⑦', price: 6000, guarantee: '1.5億' },
-  'E-8': { name: '護航⑧', price: 7900, guarantee: '2億' },
-  'C-1': { name: '電台清圖', price: 520, guarantee: null },
-  'C-2': { name: '王牌清圖', price: 1000, guarantee: null },
-  'C-3': { name: '主教練上場', price: 1200, guarantee: null },
-  'I-1': { name: '摸保險 10個', price: 800, guarantee: '1,000萬' },
-  'I-2': { name: '摸保險 50個', price: 4000, guarantee: '4,500萬' },
-  'I-3': { name: '摸保險 100個', price: 7000, guarantee: '8,000萬' },
-  'G-1': { name: '單局單大金', price: 550, guarantee: null },
-  'G-2': { name: '單局帶出1500萬', price: 6888, guarantee: '3,888萬' },
-  'G-3': { name: '指定任意大金', price: 5400, guarantee: null },
-  'S-1': { name: '機密文件', price: 4100, guarantee: '6,888萬' },
-  'S-2': { name: '理想國', price: 2680, guarantee: '3,999萬' },
-  'A-1': { name: 'S5 3x3代肝', price: 2800, guarantee: null },
-  'A-2': { name: '單日代肝8H', price: 1200, guarantee: null },
-  'A-3': { name: '週套餐代肝', price: 7500, guarantee: null },
-  'P-1': { name: '技術男陪/H', price: 350, guarantee: null },
-  'P-2': { name: '娛樂女陪/H', price: 350, guarantee: null },
-  'P-3': { name: '長時陪做套餐', price: 3688, guarantee: null },
-  'P-4': { name: '任務救急', price: 260, guarantee: null },
+  'E-1': { name: '護航①', price: 750, guarantee: '1,388萬', cat: '護航' },
+  'E-2': { name: '護航②', price: 1200, guarantee: '2,588萬', cat: '護航' },
+  'E-3': { name: '護航③', price: 1700, guarantee: '3,788萬', cat: '護航' },
+  'E-4': { name: '護航④', price: 2200, guarantee: '4,888萬', cat: '護航' },
+  'E-5': { name: '護航⑤', price: 3200, guarantee: '7,388萬', cat: '護航' },
+  'E-6': { name: '護航⑥', price: 4000, guarantee: '1億', cat: '護航' },
+  'E-7': { name: '護航⑦', price: 6000, guarantee: '1.5億', cat: '護航' },
+  'E-8': { name: '護航⑧', price: 7900, guarantee: '2億', cat: '護航' },
+  'C-1': { name: '電台清圖', price: 520, guarantee: null, cat: '清圖' },
+  'C-2': { name: '王牌清圖', price: 1000, guarantee: null, cat: '清圖' },
+  'C-3': { name: '主教練上場', price: 1200, guarantee: null, cat: '清圖' },
+  'I-1': { name: '摸保險 10個', price: 800, guarantee: '1,000萬', cat: '摸保險' },
+  'I-2': { name: '摸保險 50個', price: 4000, guarantee: '4,500萬', cat: '摸保險' },
+  'I-3': { name: '摸保險 100個', price: 7000, guarantee: '8,000萬', cat: '摸保險' },
+  'G-1': { name: '單局單大金', price: 550, guarantee: null, cat: '對賭' },
+  'G-2': { name: '單局帶出1500萬', price: 6888, guarantee: '3,888萬', cat: '對賭' },
+  'G-3': { name: '指定任意大金', price: 5400, guarantee: null, cat: '對賭' },
+  'S-1': { name: '機密文件', price: 4100, guarantee: '6,888萬', cat: '特殊地圖' },
+  'S-2': { name: '理想國', price: 2680, guarantee: '3,999萬', cat: '特殊地圖' },
+  'A-1': { name: 'S5 3x3代肝', price: 2800, guarantee: null, cat: '代肝' },
+  'A-2': { name: '單日代肝8H', price: 1200, guarantee: null, cat: '代肝' },
+  'A-3': { name: '週套餐代肝', price: 7500, guarantee: null, cat: '代肝' },
+  'P-1': { name: '技術男陪/H', price: 350, guarantee: null, cat: '陪玩' },
+  'P-2': { name: '娛樂女陪/H', price: 350, guarantee: null, cat: '陪玩' },
+  'P-3': { name: '長時陪做套餐', price: 3688, guarantee: null, cat: '陪玩' },
+  'P-4': { name: '任務救急', price: 260, guarantee: null, cat: '陪玩' },
 };
+
+// ── VIP 等級定義 ──
+const VIP_TIERS = [
+  { min: 200000, name: 'Legend', discount: 0.80, emoji: '👑', color: 0xec4899 },
+  { min: 100000, name: 'Diamond', discount: 0.85, emoji: '💎', color: 0x00e5ff },
+  { min: 40000, name: 'Gold', discount: 0.90, emoji: '🥇', color: 0xffd700 },
+  { min: 15000, name: 'Silver', discount: 0.95, emoji: '🥈', color: 0xc0c0c0 },
+  { min: 5000, name: 'Bronze', discount: 0.97, emoji: '🥉', color: 0xcd7f32 },
+  { min: 0, name: 'Rookie', discount: 1.0, emoji: '🆕', color: 0x6b7280 },
+];
+
+function getVipTier(totalSpent) {
+  return VIP_TIERS.find(t => totalSpent >= t.min);
+}
+
+// ── 每日優惠池 ──
+const DAILY_DEALS = [
+  { code: 'E-4', discount: '9折', desc: '護航④ 今日限定 9折！原價2200T → 1980T' },
+  { code: 'C-2', discount: '85折', desc: '王牌清圖 限時85折！原價1000T → 850T' },
+  { code: 'I-2', discount: '9折', desc: '摸保險50個 今日9折！原價4000T → 3600T' },
+  { code: 'S-1', discount: '95折', desc: '機密文件 今日95折！原價4100T → 3895T' },
+  { code: 'A-1', discount: '88折', desc: '3x3代肝 超值88折！原價2800T → 2464T' },
+  { code: 'P-3', discount: '9折', desc: '陪做套餐 今日9折！原價3688T → 3319T' },
+  { code: 'E-5', discount: '95折', desc: '護航⑤ 今日95折！原價3200T → 3040T' },
+  { code: 'G-2', discount: '9折', desc: '帶出1500萬 今日9折！原價6888T → 6199T' },
+];
 
 // ============================================================
 // Discord Client
@@ -69,624 +108,721 @@ const client = new Client({
 });
 
 client.once('ready', async () => {
-  console.log(`🌙 MK-01 已上線：${client.user.tag}`);
+  console.log(`🌙 MK-01 v3.0 已上線：${client.user.tag}`);
   const guild = client.guilds.cache.get(GUILD_ID);
   if (!guild) return console.error('找不到伺服器！');
-
-  // 快取或建立頻道
   await setupChannels(guild);
 
-  // 發送上線通知
   if (channels.announcements) {
     const ch = guild.channels.cache.get(channels.announcements);
     if (ch) {
       const embed = new EmbedBuilder()
         .setColor(0x00e5ff)
-        .setTitle('🌙 MK-01 接單系統已上線')
-        .setDescription('自動接單系統運行中，所有新訂單將自動推送到此伺服器。')
+        .setTitle('🌙 MK-01 v3.0 接單系統已上線')
+        .setDescription('自動接單 · 驗證系統 · 排行榜 · 工單 · 每日優惠 · VIP升級公告\n所有功能已就緒！')
         .setTimestamp();
       ch.send({ embeds: [embed] });
     }
   }
 });
 
-// ── 自動建立頻道與角色 ──
+// ============================================================
+// 🔐 驗證系統 — 新成員自動給角色
+// ============================================================
+client.on('guildMemberAdd', async (member) => {
+  try {
+    const guild = member.guild;
+    const clientRole = guild.roles.cache.find(r => r.name === '客戶');
+    if (clientRole) {
+      await member.roles.add(clientRole);
+      console.log(`✅ 已給 ${member.user.tag} 客戶角色`);
+    }
+
+    // 發送歡迎 DM
+    try {
+      const welcomeEmbed = new EmbedBuilder()
+        .setColor(0x8b5cf6)
+        .setTitle('🌙 歡迎加入午夜俱樂部！')
+        .setDescription(
+          `嗨 ${member.user.username}！歡迎來到暗區突圍最強代練俱樂部\n\n` +
+          '🎁 **新手推薦：扶貧單 350T 起！**\n' +
+          '💰 查看報價：到 `💰｜報價表` 頻道\n' +
+          '📝 下單方式：加 LINE **23roger02** 報編號\n\n' +
+          '🛡️ 追繳三重賠付 · 純綠玩 · 全程可直播'
+        );
+      await member.send({ embeds: [welcomeEmbed] });
+    } catch (e) { /* DM可能被關閉 */ }
+
+    // 在歡迎頻道公告
+    if (channels.welcome) {
+      const wCh = guild.channels.cache.get(channels.welcome);
+      if (wCh) {
+        wCh.send(`🎉 歡迎 <@${member.id}> 加入午夜俱樂部！快到 💰｜報價表 看看服務吧～`);
+      }
+    }
+  } catch (e) { console.error('驗證系統錯誤:', e.message); }
+});
+
+// ============================================================
+// 💬 指令系統 (訊息觸發)
+// ============================================================
+client.on('messageCreate', async (msg) => {
+  if (msg.author.bot || !msg.content.startsWith('!')) return;
+  const args = msg.content.slice(1).trim().split(/\s+/);
+  const cmd = args.shift().toLowerCase();
+
+  // ── !排行榜 / !leaderboard ──
+  if (cmd === '排行榜' || cmd === 'leaderboard' || cmd === 'lb') {
+    const sorted = [...boosterStats.entries()]
+      .sort((a, b) => b[1].completed - a[1].completed)
+      .slice(0, 10);
+
+    if (sorted.length === 0) {
+      return msg.reply('📊 暫無排行資料，完成訂單後自動更新！');
+    }
+
+    const lines = sorted.map(([tag, s], i) => {
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
+      return `${medal} **${tag}** — ${s.completed} 單 · ${s.revenue.toLocaleString()}T`;
+    });
+
+    const embed = new EmbedBuilder()
+      .setColor(0xfbbf24)
+      .setTitle('🏆 打手排行榜')
+      .setDescription(lines.join('\n'))
+      .setFooter({ text: '依完成訂單數排名' })
+      .setTimestamp();
+    msg.channel.send({ embeds: [embed] });
+  }
+
+  // ── !報價 / !price ──
+  if (cmd === '報價' || cmd === 'price') {
+    const code = (args[0] || '').toUpperCase();
+    if (code && SERVICES[code]) {
+      const s = SERVICES[code];
+      const embed = new EmbedBuilder()
+        .setColor(0x00e5ff)
+        .setTitle(`💰 ${code} ${s.name}`)
+        .addFields(
+          { name: '價格', value: `${s.price.toLocaleString()} T`, inline: true },
+          { name: '保底', value: s.guarantee || '無', inline: true },
+          { name: '分類', value: s.cat, inline: true },
+        );
+      msg.channel.send({ embeds: [embed] });
+    } else {
+      msg.reply('用法：`!報價 E-4` — 輸入服務編號查詢');
+    }
+  }
+
+  // ── !vip <contactId> ──
+  if (cmd === 'vip') {
+    const id = args[0];
+    if (!id) return msg.reply('用法：`!vip <你的聯繫ID>`');
+    const data = vipData.get(id);
+    if (!data) return msg.reply('找不到此 ID 的消費紀錄');
+    const tier = getVipTier(data.totalSpent);
+    const embed = new EmbedBuilder()
+      .setColor(tier.color)
+      .setTitle(`${tier.emoji} VIP 會員資訊`)
+      .addFields(
+        { name: '等級', value: tier.name, inline: true },
+        { name: '累計消費', value: `${data.totalSpent.toLocaleString()} T`, inline: true },
+        { name: '折扣', value: `${Math.round(tier.discount * 100)}%`, inline: true },
+        { name: '訂單數', value: `${data.orders.length}`, inline: true },
+      );
+    msg.channel.send({ embeds: [embed] });
+  }
+
+  // ── !工單 / !ticket <問題描述> ──
+  if (cmd === '工單' || cmd === 'ticket') {
+    const desc = args.join(' ');
+    if (!desc) return msg.reply('用法：`!工單 <問題描述>`');
+
+    const ticketId = `TK${++ticketCounter}`;
+    const ticket = {
+      id: ticketId,
+      userId: msg.author.id,
+      userTag: msg.author.tag,
+      description: desc,
+      status: 'open',
+      createdAt: new Date().toISOString(),
+      responses: [],
+    };
+    tickets.set(ticketId, ticket);
+
+    const embed = new EmbedBuilder()
+      .setColor(0xf43f5e)
+      .setTitle(`🎫 工單 #${ticketId}`)
+      .addFields(
+        { name: '提交者', value: msg.author.tag, inline: true },
+        { name: '狀態', value: '🔴 待處理', inline: true },
+        { name: '問題描述', value: desc },
+      )
+      .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`tkresolve_${ticketId}`).setLabel('✅ 已解決').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`tkclose_${ticketId}`).setLabel('❌ 關閉').setStyle(ButtonStyle.Danger),
+    );
+
+    // 發到管理頻道
+    if (channels.adminLog) {
+      const aCh = msg.guild.channels.cache.get(channels.adminLog);
+      if (aCh) aCh.send({ embeds: [embed], components: [row] });
+    }
+
+    // Telegram 通知
+    await sendTelegram(`🎫 新工單 #${ticketId}\n提交者：${msg.author.tag}\n問題：${desc}`);
+
+    msg.reply(`✅ 工單 #${ticketId} 已建立！Roger 會盡快處理。`);
+  }
+
+  // ── !同步報價 / !sync ──
+  if (cmd === '同步報價' || cmd === 'sync') {
+    // 只有 Boss 角色可以操作
+    const bossRole = msg.guild.roles.cache.find(r => r.name === 'Boss');
+    if (!bossRole || !msg.member.roles.cache.has(bossRole.id)) {
+      return msg.reply('❌ 只有 Boss 可以同步報價');
+    }
+    await syncPricesToDiscord(msg.guild);
+    msg.reply('✅ 報價表已同步到 💰｜報價表 頻道！');
+  }
+});
+
+// ============================================================
+// 🎫 工單按鈕處理
+// ============================================================
+// (merged into main interactionCreate below)
+
+// ============================================================
+// 🔔 按鈕互動處理（接單/完成/工單）
+// ============================================================
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isButton()) return;
+
+  const [action, id] = interaction.customId.split('_');
+  const guild = interaction.guild;
+
+  // ── 工單按鈕 ──
+  if (action === 'tkresolve' || action === 'tkclose') {
+    const ticket = tickets.get(id);
+    if (!ticket) return interaction.reply({ content: '找不到此工單', ephemeral: true });
+    ticket.status = action === 'tkresolve' ? 'resolved' : 'closed';
+    const statusText = action === 'tkresolve' ? '✅ 已解決' : '❌ 已關閉';
+    await interaction.update({
+      embeds: [
+        EmbedBuilder.from(interaction.message.embeds[0])
+          .setColor(action === 'tkresolve' ? 0x34d399 : 0x6b7280)
+          .spliceFields(1, 1, { name: '狀態', value: statusText, inline: true })
+      ],
+      components: [],
+    });
+    return;
+  }
+
+  // ── 訂單按鈕 ──
+  const order = orders.get(id);
+  if (!order) return interaction.reply({ content: '❌ 找不到此訂單', ephemeral: true });
+
+  if (action === 'accept') {
+    if (order.status !== 'pending') return interaction.reply({ content: '⚠️ 此訂單已被其他打手接走', ephemeral: true });
+    order.status = 'active'; order.booster = interaction.user.tag; order.boosterId = interaction.user.id; order.acceptedAt = new Date().toISOString();
+    await interaction.deferUpdate();
+    try { await interaction.message.delete(); } catch(e) {}
+    if (channels.activeOrders) {
+      const activeCh = guild.channels.cache.get(channels.activeOrders);
+      if (activeCh) {
+        const activeEmbed = new EmbedBuilder().setColor(0xfbbf24).setTitle(`⚡ 訂單 #${id} — 進行中`)
+          .addFields({ name: '🛡️ 服務', value: order.serviceName, inline: true },{ name: '💰 金額', value: `${order.price} T`, inline: true },{ name: '🎮 打手', value: interaction.user.tag, inline: true },{ name: '👤 老闆', value: order.customerName || '未知', inline: true },{ name: '🎯 保底', value: order.guarantee || '無', inline: true },{ name: '🗺️ 地圖', value: order.map || '不指定', inline: true })
+          .setFooter({ text: '完成後點下方按鈕' }).setTimestamp();
+        const activeRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`done_${id}`).setLabel('✅ 完成訂單').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`problem_${id}`).setLabel('⚠️ 回報問題').setStyle(ButtonStyle.Danger));
+        const activeMsg = await activeCh.send({ embeds: [activeEmbed], components: [activeRow] });
+        const ref = orderMessages.get(id) || {}; ref.active = { channelId: activeCh.id, messageId: activeMsg.id }; orderMessages.set(id, ref);
+      }
+    }
+    await sendTelegram(`⚡ 訂單 #${id} 已被接單\n打手：${interaction.user.tag}\n服務：${order.serviceName}\n金額：${order.price} T`);
+    await interaction.followUp({ content: `✅ 你已接下訂單 #${id}，開始作業吧！`, ephemeral: true });
+  }
+
+  if (action === 'done') {
+    if (order.boosterId !== interaction.user.id) return interaction.reply({ content: '❌ 只有接單打手可以完成此訂單', ephemeral: true });
+    order.status = 'completed'; order.completedAt = new Date().toISOString();
+    dailyStats.revenue += order.price; dailyStats.count += 1; dailyStats.services[order.serviceCode] = (dailyStats.services[order.serviceCode] || 0) + 1;
+    try { await interaction.message.delete(); } catch(e) {}
+    const msgRef = orderMessages.get(id);
+    if (msgRef && msgRef.newOrder) { try { const nCh = guild.channels.cache.get(msgRef.newOrder.channelId); if (nCh) { const m = await nCh.messages.fetch(msgRef.newOrder.messageId); await m.delete(); } } catch(e) {} }
+
+    // ── 更新打手排行榜 ──
+    const bs = boosterStats.get(order.booster) || { completed: 0, revenue: 0, name: order.booster };
+    bs.completed += 1;
+    bs.revenue += order.price;
+    boosterStats.set(order.booster, bs);
+
+    // ── 更新 VIP 資料 ──
+    if (order.contactId && order.contactId !== '未填') {
+      const vip = vipData.get(order.contactId) || { totalSpent: 0, orders: [], name: order.customerName };
+      const oldTier = getVipTier(vip.totalSpent);
+      vip.totalSpent += order.price;
+      vip.orders.push({ id, service: order.serviceName, price: order.price, date: order.completedAt });
+      vipData.set(order.contactId, vip);
+
+      // ── VIP 升級公告 ──
+      const newTier = getVipTier(vip.totalSpent);
+      if (newTier.min > oldTier.min) {
+        await announceVipUpgrade(guild, order.customerName || order.contactId, newTier, vip.totalSpent);
+      }
+    }
+
+    if (channels.completed) {
+      const compCh = guild.channels.cache.get(channels.completed);
+      if (compCh) {
+        const compEmbed = new EmbedBuilder().setColor(0x34d399).setTitle(`✅ 訂單 #${id} 完成`)
+          .addFields({ name: '服務', value: order.serviceName, inline: true },{ name: '金額', value: `${order.price} T`, inline: true },{ name: '打手', value: order.booster, inline: true },{ name: '耗時', value: getTimeDiff(order.acceptedAt, order.completedAt), inline: true }).setTimestamp();
+        compCh.send({ embeds: [compEmbed] });
+      }
+    }
+    await sendTelegram(`✅ 訂單 #${id} 已完成\n服務：${order.serviceName}\n金額：${order.price} T\n打手：${order.booster}\n耗時：${getTimeDiff(order.acceptedAt, order.completedAt)}`);
+  }
+
+  if (action === 'problem') {
+    await interaction.reply({ content: `⚠️ 訂單 #${id} 問題已通知 Roger`, ephemeral: true });
+    await sendTelegram(`⚠️ 訂單 #${id} 有問題！\n打手：${interaction.user.tag}\n服務：${order.serviceName}\n請盡快處理！`);
+  }
+});
+
+// ============================================================
+// 👑 VIP 升級公告
+// ============================================================
+async function announceVipUpgrade(guild, customerName, tier, totalSpent) {
+  if (!channels.announcements) return;
+  const ch = guild.channels.cache.get(channels.announcements);
+  if (!ch) return;
+
+  const embed = new EmbedBuilder()
+    .setColor(tier.color)
+    .setTitle(`${tier.emoji} VIP 升級公告！`)
+    .setDescription(
+      `🎉 恭喜 **${customerName}** 升級為 **${tier.name}** 會員！\n\n` +
+      `累計消費：${totalSpent.toLocaleString()} T\n` +
+      `享有折扣：${Math.round(tier.discount * 100)}%\n\n` +
+      `感謝老闆的支持！🌙`
+    )
+    .setTimestamp();
+  ch.send({ embeds: [embed] });
+
+  await sendTelegram(`👑 VIP升級！\n客戶：${customerName}\n新等級：${tier.name} ${tier.emoji}\n累計：${totalSpent.toLocaleString()}T`);
+}
+
+// ============================================================
+// 📢 8591 報價同步到 Discord
+// ============================================================
+async function syncPricesToDiscord(guild) {
+  if (!channels.priceList) return;
+  const pCh = guild.channels.cache.get(channels.priceList);
+  if (!pCh) return;
+
+  // 清除舊訊息
+  try {
+    const oldMsgs = await pCh.messages.fetch({ limit: 20 });
+    if (oldMsgs.size > 0) await pCh.bulkDelete(oldMsgs).catch(() => {});
+  } catch(e) {}
+
+  const e1 = new EmbedBuilder().setColor(0x00e5ff).setTitle('🛡️ 護航單（包鑰匙·不卡保底·無封頂·追繳三重賠付）')
+    .setDescription(Object.entries(SERVICES).filter(([,s]) => s.cat === '護航').map(([k,s]) => `**${k}** ${s.name} — **${s.price.toLocaleString()}T** ${s.guarantee ? `→ 保底 ${s.guarantee}` : ''}`).join('\n') + '\n\n🎁 護航買五送一！');
+  const e2 = new EmbedBuilder().setColor(0xfbbf24).setTitle('🧹 清圖 · 🎲 摸保險 · 💰 對賭')
+    .setDescription(
+      '**清圖：**\n' + Object.entries(SERVICES).filter(([,s]) => s.cat === '清圖').map(([k,s]) => `${k} ${s.name} — **${s.price.toLocaleString()}T**/局`).join('\n') +
+      '\n\n**摸保險：**\n' + Object.entries(SERVICES).filter(([,s]) => s.cat === '摸保險').map(([k,s]) => `${k} ${s.name} — **${s.price.toLocaleString()}T** ${s.guarantee ? `→ 保底 ${s.guarantee}` : ''}`).join('\n') +
+      '\n\n**對賭：**\n' + Object.entries(SERVICES).filter(([,s]) => s.cat === '對賭').map(([k,s]) => `${k} ${s.name} — **${s.price.toLocaleString()}T** ${s.guarantee ? `→ 保底 ${s.guarantee}` : ''}`).join('\n')
+    );
+  const e3 = new EmbedBuilder().setColor(0xec4899).setTitle('🗺️ 特殊地圖 · 🧬 代肝 · 🎮 陪玩')
+    .setDescription(
+      '**特殊地圖：**\n' + Object.entries(SERVICES).filter(([,s]) => s.cat === '特殊地圖').map(([k,s]) => `${k} ${s.name} — **${s.price.toLocaleString()}T** ${s.guarantee ? `→ 保底 ${s.guarantee}` : ''}`).join('\n') +
+      '\n\n**代肝：**\n' + Object.entries(SERVICES).filter(([,s]) => s.cat === '代肝').map(([k,s]) => `${k} ${s.name} — **${s.price.toLocaleString()}T**`).join('\n') +
+      '\n\n**陪玩：**\n' + Object.entries(SERVICES).filter(([,s]) => s.cat === '陪玩').map(([k,s]) => `${k} ${s.name} — **${s.price.toLocaleString()}T**`).join('\n')
+    );
+  const e4 = new EmbedBuilder().setColor(0x34d399).setTitle('🎁 扶貧單 + 📋 下單方式')
+    .setDescription('**扶貧單（每週限一次）：**\nA方案 **350T** → 保底 700萬\nB方案 **700T** → 保底 1,500萬\n\n━━━━━━━━━━━━━━\n**報編號就能下單！**\n加 LINE：**23roger02**\n🔥 追繳三重賠付：全額退 + 1000T + 2625點卷');
+
+  await pCh.send({ embeds: [e1, e2, e3, e4] });
+  console.log('✅ 報價表已同步到 Discord');
+}
+
+// ============================================================
+// 自動建立頻道與角色
+// ============================================================
 async function setupChannels(guild) {
-  // ── 分類定義 ──
   const categoryDefs = [
     { key: 'catPublic', name: '🎮 暗區社群（公開）' },
     { key: 'catVoice', name: '🔊 語音頻道' },
     { key: 'catBusiness', name: '🌙 午夜俱樂部（接單）' },
     { key: 'catInternal', name: '🔒 內部管理' },
   ];
-
-  // ── 頻道定義（含分類歸屬） ──
   const channelDefs = [
-    // 公開社群區 — 所有人可見，吸引玩家
-    { key: 'welcome', name: '👋｜歡迎光臨', topic: '新人必看！俱樂部介紹與規則', cat: 'catPublic' },
-    { key: 'announcements', name: '📢｜公告', topic: '系統公告與重要通知', cat: 'catPublic' },
-    { key: 'chat', name: '💬｜閒聊吹水', topic: '暗區玩家自由聊天', cat: 'catPublic' },
-    { key: 'gameChat', name: '🔫｜暗區攻略', topic: '地圖攻略、武器討論、打法分享', cat: 'catPublic' },
-    { key: 'showoff', name: '🏆｜戰績曬單', topic: '曬你的大金、神裝、滿載撤離！', cat: 'catPublic' },
-    { key: 'memes', name: '😂｜迷因梗圖', topic: '暗區搞笑圖片影片', cat: 'catPublic' },
-    { key: 'lfg', name: '🎯｜組隊找人', topic: '找人一起打暗區', cat: 'catPublic' },
-    { key: 'priceList', name: '💰｜報價表', topic: '代練服務報價一覽（唯讀）', cat: 'catPublic' },
-    { key: 'reviews', name: '⭐｜好評曬單', topic: '客戶完成截圖與好評', cat: 'catPublic' },
-    // 語音頻道區 — 分三層：一般玩家 / 老闆專屬 / VIP 尊享
-    // 一般玩家（所有人可進）
-    { key: 'vcLobby', name: '🔊｜大廳聊天', topic: null, cat: 'catVoice', voice: true },
-    { key: 'vcTeam1', name: '🎯｜組隊 1', topic: null, cat: 'catVoice', voice: true },
-    { key: 'vcTeam2', name: '🎯｜組隊 2', topic: null, cat: 'catVoice', voice: true },
-    { key: 'vcTeam3', name: '🎯｜組隊 3', topic: null, cat: 'catVoice', voice: true },
-    { key: 'vcChill', name: '🎵｜音樂放鬆', topic: null, cat: 'catVoice', voice: true },
-    // 老闆專屬（客戶角色以上）
-    { key: 'vcBoss1', name: '🎮｜老闆開黑 1', topic: null, cat: 'catVoice', voice: true, clientOnly: true },
-    { key: 'vcBoss2', name: '🎮｜老闆開黑 2', topic: null, cat: 'catVoice', voice: true, clientOnly: true },
-    { key: 'vcBoost1', name: '🛡️｜代練作業 1', topic: null, cat: 'catVoice', voice: true, clientOnly: true },
-    { key: 'vcBoost2', name: '🛡️｜代練作業 2', topic: null, cat: 'catVoice', voice: true, clientOnly: true },
-    // VIP 尊享（VIP 角色限定）
-    { key: 'vcVip1', name: '👑｜VIP 包廂 1', topic: null, cat: 'catVoice', voice: true, vipOnly: true },
-    { key: 'vcVip2', name: '👑｜VIP 包廂 2', topic: null, cat: 'catVoice', voice: true, vipOnly: true },
-    { key: 'vcVipRanked', name: '💎｜VIP 競技房', topic: null, cat: 'catVoice', voice: true, vipOnly: true },
-    // 接單系統 — 客戶與打手互動
-    { key: 'newOrders', name: '🔔｜新訂單', topic: '新訂單自動推送，打手在此接單', cat: 'catBusiness' },
-    { key: 'activeOrders', name: '⚡｜進行中', topic: '已接受的訂單追蹤', cat: 'catBusiness' },
-    { key: 'completed', name: '✅｜已完成', topic: '完成的訂單紀錄', cat: 'catBusiness' },
-    { key: 'customerLobby', name: '🎮｜老闆大廳', topic: '下單客戶聊天與溝通', cat: 'catBusiness' },
-    { key: 'vipLounge', name: '👑｜VIP專區', topic: 'VIP 會員專屬頻道', cat: 'catBusiness' },
-    // 內部管理 — 僅 Boss 和 Booster 可見
-    { key: 'boosterChat', name: '💬｜打手聊天', topic: '打手內部溝通', cat: 'catInternal' },
-    { key: 'dailyStats', name: '📊｜每日報表', topic: '每日自動業務摘要', cat: 'catInternal' },
-    { key: 'adminLog', name: '📋｜管理日誌', topic: '系統操作紀錄', cat: 'catInternal' },
+    { key: 'welcome', name: '👋｜歡迎光臨', cat: 'catPublic' },
+    { key: 'announcements', name: '📢｜公告', cat: 'catPublic' },
+    { key: 'chat', name: '💬｜閒聊吹水', cat: 'catPublic' },
+    { key: 'gameChat', name: '🔫｜暗區攻略', cat: 'catPublic' },
+    { key: 'showoff', name: '🏆｜戰績曬單', cat: 'catPublic' },
+    { key: 'priceList', name: '💰｜報價表', cat: 'catPublic' },
+    { key: 'reviews', name: '⭐｜好評曬單', cat: 'catPublic' },
+    { key: 'vcLobby', name: '🔊｜大廳聊天', cat: 'catVoice', voice: true },
+    { key: 'vcTeam1', name: '🎯｜組隊 1', cat: 'catVoice', voice: true },
+    { key: 'vcTeam2', name: '🎯｜組隊 2', cat: 'catVoice', voice: true },
+    { key: 'newOrders', name: '🔔｜新訂單', cat: 'catBusiness' },
+    { key: 'activeOrders', name: '⚡｜進行中', cat: 'catBusiness' },
+    { key: 'completed', name: '✅｜已完成', cat: 'catBusiness' },
+    { key: 'customerLobby', name: '🎮｜老闆大廳', cat: 'catBusiness' },
+    { key: 'vipLounge', name: '👑｜VIP專區', cat: 'catBusiness' },
+    { key: 'boosterChat', name: '💬｜打手聊天', cat: 'catInternal' },
+    { key: 'dailyStats', name: '📊｜每日報表', cat: 'catInternal' },
+    { key: 'adminLog', name: '📋｜管理日誌', cat: 'catInternal' },
   ];
-
-  // 建立角色（如果不存在）
   const roleDefs = [
     { name: 'Boss', color: 0xf43f5e, hoist: true },
     { name: 'Booster', color: 0xfbbf24, hoist: true },
     { name: 'VIP客戶', color: 0x8b5cf6, hoist: true },
     { name: '客戶', color: 0x6b7280, hoist: false },
   ];
-
   for (const rd of roleDefs) {
-    const existing = guild.roles.cache.find(r => r.name === rd.name);
-    if (!existing) {
-      await guild.roles.create({
-        name: rd.name,
-        color: rd.color,
-        hoist: rd.hoist,
-        reason: 'MK-01 自動建立'
-      });
-      console.log(`✅ 已建立角色：${rd.name}`);
+    if (!guild.roles.cache.find(r => r.name === rd.name)) {
+      await guild.roles.create({ name: rd.name, color: rd.color, hoist: rd.hoist, reason: 'MK-01' });
     }
   }
-
-  // 建立分類
   const categories = {};
   for (const catDef of categoryDefs) {
-    let cat = guild.channels.cache.find(
-      c => c.name === catDef.name && c.type === ChannelType.GuildCategory
-    );
+    let cat = guild.channels.cache.find(c => c.name === catDef.name && c.type === ChannelType.GuildCategory);
     if (!cat) {
-      const boosterRole = guild.roles.cache.find(r => r.name === 'Booster');
-      const bossRole = guild.roles.cache.find(r => r.name === 'Boss');
       const perms = [];
-
-      // 內部管理分類：僅 Boss 和 Booster 可見
       if (catDef.key === 'catInternal') {
-        perms.push(
-          { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-        );
-        if (boosterRole) perms.push({ id: boosterRole.id, allow: [PermissionFlagsBits.ViewChannel] });
-        if (bossRole) perms.push({ id: bossRole.id, allow: [PermissionFlagsBits.ViewChannel] });
+        perms.push({ id: guild.id, deny: [PermissionFlagsBits.ViewChannel] });
+        const br = guild.roles.cache.find(r => r.name === 'Booster');
+        const bo = guild.roles.cache.find(r => r.name === 'Boss');
+        if (br) perms.push({ id: br.id, allow: [PermissionFlagsBits.ViewChannel] });
+        if (bo) perms.push({ id: bo.id, allow: [PermissionFlagsBits.ViewChannel] });
       }
-
-      cat = await guild.channels.create({
-        name: catDef.name,
-        type: ChannelType.GuildCategory,
-        permissionOverwrites: perms.length ? perms : undefined,
-        reason: 'MK-01 自動建立'
-      });
-      console.log(`✅ 已建立分類：${catDef.name}`);
+      cat = await guild.channels.create({ name: catDef.name, type: ChannelType.GuildCategory, permissionOverwrites: perms.length ? perms : undefined, reason: 'MK-01' });
     }
     categories[catDef.key] = cat.id;
   }
-
-  // 建立頻道
   for (const cd of channelDefs) {
-    const parentId = categories[cd.cat] || categories.catPublic;
+    const parentId = categories[cd.cat];
     const chType = cd.voice ? ChannelType.GuildVoice : ChannelType.GuildText;
-    // 先找同分類下的，再找全伺服器同名的（避免重複建立）
-    let ch = guild.channels.cache.find(
-      c => c.name === cd.name && c.parentId === parentId
-    ) || guild.channels.cache.find(
-      c => c.name === cd.name
-    );
+    let ch = guild.channels.cache.find(c => c.name === cd.name && c.parentId === parentId) || guild.channels.cache.find(c => c.name === cd.name);
     if (!ch) {
-      const chPerms = [];
-      // 報價表設為唯讀
-      if (cd.key === 'priceList') {
-        chPerms.push({ id: guild.id, deny: [PermissionFlagsBits.SendMessages] });
-      }
-      // 老闆專屬（客戶+VIP+Booster+Boss 可見，一般玩家不可見）
-      if (cd.clientOnly) {
-        const clientRole = guild.roles.cache.find(r => r.name === '客戶');
-        const vipRole = guild.roles.cache.find(r => r.name === 'VIP客戶');
-        const bossRole = guild.roles.cache.find(r => r.name === 'Boss');
-        const boosterRole = guild.roles.cache.find(r => r.name === 'Booster');
-        chPerms.push({ id: guild.id, deny: [PermissionFlagsBits.ViewChannel] });
-        if (clientRole) chPerms.push({ id: clientRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] });
-        if (vipRole) chPerms.push({ id: vipRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] });
-        if (bossRole) chPerms.push({ id: bossRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] });
-        if (boosterRole) chPerms.push({ id: boosterRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] });
-      }
-      // VIP 尊享（僅 VIP+Boss+Booster 可見）
-      if (cd.key === 'vipLounge' || cd.vipOnly) {
-        const vipRole = guild.roles.cache.find(r => r.name === 'VIP客戶');
-        const bossRole = guild.roles.cache.find(r => r.name === 'Boss');
-        const boosterRole = guild.roles.cache.find(r => r.name === 'Booster');
-        chPerms.push({ id: guild.id, deny: [PermissionFlagsBits.ViewChannel] });
-        if (vipRole) chPerms.push({ id: vipRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] });
-        if (bossRole) chPerms.push({ id: bossRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] });
-        if (boosterRole) chPerms.push({ id: boosterRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] });
-      }
-
-      const opts = {
-        name: cd.name,
-        type: chType,
-        parent: parentId,
-        permissionOverwrites: chPerms.length ? chPerms : undefined,
-        reason: 'MK-01 自動建立'
-      };
-      if (cd.topic && !cd.voice) opts.topic = cd.topic;
-      // 語音頻道設定人數上限
-      if (cd.voice && (cd.key.startsWith('vcTeam') || cd.key.startsWith('vcBoost'))) {
-        opts.userLimit = 5; // 暗區突圍最多 5 人一隊
-      }
-
-      ch = await guild.channels.create(opts);
-      console.log(`✅ 已建立${cd.voice ? '語音' : '文字'}頻道：${cd.name}`);
+      ch = await guild.channels.create({ name: cd.name, type: chType, parent: parentId, reason: 'MK-01' });
     }
     channels[cd.key] = ch.id;
   }
-
-  // ── 自動發送歡迎訊息到 #welcome ──
-  if (channels.welcome) {
-    const wCh = guild.channels.cache.get(channels.welcome);
-    if (wCh) {
-      const msgs = await wCh.messages.fetch({ limit: 1 });
-      if (msgs.size === 0) {
-        const embed = new EmbedBuilder()
-          .setColor(0x8b5cf6)
-          .setTitle('🌙 歡迎來到午夜俱樂部')
-          .setDescription(
-            '**暗區突圍：無限** 最強代練俱樂部\n\n' +
-            '🛡️ 護航帶刷 · 🧹 清圖開局 · 🎲 摸保險\n' +
-            '💰 對賭大金 · 🧬 3x3代肝 · 🎮 陪玩\n\n' +
-            '━━━━━━━━━━━━━━\n' +
-            '**頻道導覽：**\n' +
-            '💬 `閒聊吹水` — 自由聊天\n' +
-            '🔫 `暗區攻略` — 地圖、武器、打法討論\n' +
-            '🏆 `戰績曬單` — 曬你的戰績！\n' +
-            '🎯 `組隊找人` — 找隊友一起打\n' +
-            '💰 `報價表` — 代練服務報價\n' +
-            '⭐ `好評曬單` — 看看其他老闆的評價\n\n' +
-            '━━━━━━━━━━━━━━\n' +
-            '**想下單？** 到 `💰報價表` 看服務，或直接加 LINE：**23roger02**\n' +
-            '**追繳三重賠付** — 全額退 + 1000T + 2625點卷！'
-          )
-          .setFooter({ text: '純綠玩 · 全程可直播 · 自家打手不外聘' });
-        wCh.send({ embeds: [embed] });
-      }
-    }
-  }
-
-  // ── 自動發送報價表到 #priceList ──
-  if (channels.priceList) {
-    const pCh = guild.channels.cache.get(channels.priceList);
-    if (pCh) {
-      const msgs = await pCh.messages.fetch({ limit: 1 });
-      if (msgs.size === 0) {
-        const e1 = new EmbedBuilder().setColor(0x00e5ff).setTitle('🛡️ 護航單（包鑰匙·不卡保底·無封頂·追繳三重賠付）')
-          .setDescription('```\nE-1  750T  → 保底 1,388萬\nE-2  1,200T → 保底 2,588萬\nE-3  1,700T → 保底 3,788萬\nE-4  2,200T → 保底 4,888萬 🔥\nE-5  3,200T → 保底 7,388萬 🔥\nE-6  4,000T → 保底 1億\nE-7  6,000T → 保底 1.5億\nE-8  7,900T → 保底 2億\n```\n🎁 護航買五送一！');
-        const e2 = new EmbedBuilder().setColor(0xfbbf24).setTitle('🧹 清圖 · 🎲 摸保險 · 💰 對賭')
-          .setDescription('```\n清圖：\nC-1 電台    520T/局\nC-2 王牌  1,000T/局 🔥\nC-3 主教練 1,200T/局\n\n摸保險：\nI-1  10個   800T → 保底 1,000萬\nI-2  50個  4,000T → 保底 4,500萬\nI-3 100個  7,000T → 保底 8,000萬\n\n對賭：\nG-1 單局單大金     550T\nG-2 帶出1500萬  6,888T 🔥\nG-3 指定大金    5,400T\n```');
-        const e3 = new EmbedBuilder().setColor(0xec4899).setTitle('🗺️ 特殊地圖 · 🧬 代肝 · 🎮 陪玩')
-          .setDescription('```\n特殊地圖：\nS-1 機密文件 4,100T → 保底 6,888萬 🔥\nS-2 理想國   2,680T → 保底 3,999萬 🔥\n\n代肝：\nA-1 S5 3x3  2,800T（3天60任務）🔥\nA-2 單日8H  1,200T\nA-3 週套餐  7,500T\n\n陪玩：\nP-1 男陪 350T/H\nP-2 女陪 350T/H\nP-3 套餐 3,688T（10H+60任務）🔥\nP-4 救急 260T\n```');
-        const e4 = new EmbedBuilder().setColor(0x34d399).setTitle('📋 下單方式')
-          .setDescription('**報編號就能下單！**\n\n1️⃣ 記住你要的編號（如 E-4、C-2）\n2️⃣ 加 LINE：**23roger02**\n3️⃣ 報編號，秒回確認\n4️⃣ LINE Pay / 街口 / 轉帳\n\n🔥 **追繳三重賠付：全額退 + 1000T + 2625點卷**');
-        await pCh.send({ embeds: [e1, e2, e3, e4] });
-      }
-    }
-  }
-
   console.log('🌙 頻道設定完成');
 }
 
-// ── 處理按鈕互動（打手接單/完成） ──
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isButton()) return;
-
-  const [action, orderId] = interaction.customId.split('_');
-  const order = orders.get(orderId);
-
-  if (!order) {
-    return interaction.reply({ content: '❌ 找不到此訂單', ephemeral: true });
-  }
-
-  const guild = interaction.guild;
-
-  if (action === 'accept') {
-    if (order.status !== 'pending') {
-      return interaction.reply({ content: '⚠️ 此訂單已被其他打手接走', ephemeral: true });
-    }
-
-    order.status = 'active';
-    order.booster = interaction.user.tag;
-    order.boosterId = interaction.user.id;
-    order.acceptedAt = new Date().toISOString();
-
-    // 刪除新訂單頻道的這條訊息（不要留在新訂單裡造成混亂）
-    await interaction.deferUpdate();
-    try { await interaction.message.delete(); } catch(e) {}
-
-    // 發到進行中頻道
-    if (channels.activeOrders) {
-      const activeCh = guild.channels.cache.get(channels.activeOrders);
-      if (activeCh) {
-        const activeEmbed = new EmbedBuilder()
-          .setColor(0xfbbf24)
-          .setTitle(`⚡ 訂單 #${orderId} — 進行中`)
-          .addFields(
-            { name: '🛡️ 服務', value: order.serviceName, inline: true },
-            { name: '💰 金額', value: `${order.price} T`, inline: true },
-            { name: '🎮 打手', value: interaction.user.tag, inline: true },
-            { name: '👤 老闆', value: order.customerName || '未知', inline: true },
-            { name: '🎯 保底', value: order.guarantee || '無', inline: true },
-            { name: '🗺️ 地圖', value: order.map || '不指定', inline: true },
-          )
-          .setFooter({ text: '完成後點下方按鈕' })
-          .setTimestamp();
-        const activeRow = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`done_${orderId}`).setLabel('✅ 完成訂單').setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId(`problem_${orderId}`).setLabel('⚠️ 回報問題').setStyle(ButtonStyle.Danger),
-        );
-        const activeMsg = await activeCh.send({ embeds: [activeEmbed], components: [activeRow] });
-        // 儲存進行中訊息的參考
-        const ref = orderMessages.get(orderId) || {};
-        ref.active = { channelId: activeCh.id, messageId: activeMsg.id };
-        orderMessages.set(orderId, ref);
-      }
-    }
-
-    // Telegram 通知 Roger
-    await sendTelegram(
-      `⚡ 訂單 #${orderId} 已被接單\n` +
-      `打手：${interaction.user.tag}\n` +
-      `服務：${order.serviceName}\n` +
-      `金額：${order.price} T`
-    );
-
-    await interaction.followUp({ content: `✅ 你已接下訂單 #${orderId}，開始作業吧！`, ephemeral: true });
-  }
-
-  if (action === 'done') {
-    if (order.boosterId !== interaction.user.id) {
-      return interaction.reply({ content: '❌ 只有接單打手可以完成此訂單', ephemeral: true });
-    }
-
-    order.status = 'completed';
-    order.completedAt = new Date().toISOString();
-
-    // 更新統計
-    dailyStats.revenue += order.price;
-    dailyStats.count += 1;
-    dailyStats.services[order.serviceCode] = (dailyStats.services[order.serviceCode] || 0) + 1;
-
-    // 刪除進行中頻道的這條訊息（當前互動的訊息）
-    try { await interaction.message.delete(); } catch(e) {}
-
-    // 刪除新訂單頻道的原始訊息
-    const msgRef = orderMessages.get(orderId);
-    if (msgRef && msgRef.newOrder) {
-      try {
-        const nCh = guild.channels.cache.get(msgRef.newOrder.channelId);
-        if (nCh) { const m = await nCh.messages.fetch(msgRef.newOrder.messageId); await m.delete(); }
-      } catch(e) {}
-    }
-    if (msgRef && msgRef.active) {
-      try {
-        const aCh = guild.channels.cache.get(msgRef.active.channelId);
-        if (aCh) { const m = await aCh.messages.fetch(msgRef.active.messageId); await m.delete(); }
-      } catch(e) {}
-    }
-
-    // 發到完成頻道
-    if (channels.completed) {
-      const compCh = guild.channels.cache.get(channels.completed);
-      if (compCh) {
-        const compEmbed = new EmbedBuilder()
-          .setColor(0x34d399)
-          .setTitle(`✅ 訂單 #${orderId} 完成`)
-          .addFields(
-            { name: '服務', value: order.serviceName, inline: true },
-            { name: '金額', value: `${order.price} T`, inline: true },
-            { name: '打手', value: order.booster, inline: true },
-            { name: '耗時', value: getTimeDiff(order.acceptedAt, order.completedAt), inline: true },
-          )
-          .setTimestamp();
-        compCh.send({ embeds: [compEmbed] });
-      }
-    }
-
-    // Telegram 通知
-    await sendTelegram(
-      `✅ 訂單 #${orderId} 已完成\n` +
-      `服務：${order.serviceName}\n` +
-      `金額：${order.price} T\n` +
-      `打手：${order.booster}\n` +
-      `耗時：${getTimeDiff(order.acceptedAt, order.completedAt)}`
-    );
-  }
-
-  if (action === 'problem') {
-    await interaction.reply({
-      content: `⚠️ 訂單 #${orderId} 問題回報已通知 Roger，請在 <#${channels.boosterChat}> 說明詳情。`,
-      ephemeral: true
-    });
-    await sendTelegram(
-      `⚠️ 訂單 #${orderId} 有問題！\n` +
-      `打手：${interaction.user.tag}\n` +
-      `服務：${order.serviceName}\n` +
-      `請盡快處理！`
-    );
-  }
-});
-
 // ============================================================
-// Telegram 發送
+// Telegram
 // ============================================================
 async function sendTelegram(text) {
   try {
-    console.log(`📨 發送 Telegram... Token: ${TG_TOKEN ? TG_TOKEN.slice(0,10)+'...' : 'MISSING'}, Chat: ${TG_CHAT || 'MISSING'}`);
     const res = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: TG_CHAT,
-        text: `🌙 午夜俱樂部\n━━━━━━━━━━\n${text}`
-      })
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: TG_CHAT, text: `🌙 午夜俱樂部\n━━━━━━━━━━\n${text}` })
     });
     const data = await res.json();
-    if (!data.ok) console.error('Telegram API 錯誤:', JSON.stringify(data));
-    else console.log('✅ Telegram 發送成功');
-  } catch (e) {
-    console.error('Telegram 發送失敗:', e.message);
-  }
+    if (!data.ok) console.error('Telegram 錯誤:', JSON.stringify(data));
+  } catch (e) { console.error('Telegram 失敗:', e.message); }
 }
 
 // ============================================================
-// 每日報表（每晚 23:00）
+// ⏰ 排程任務
 // ============================================================
+
+// ── 每日優惠（每天 10:00） ──
+cron.schedule('0 10 * * *', async () => {
+  const guild = client.guilds.cache.get(GUILD_ID);
+  if (!guild || !channels.announcements) return;
+  const ch = guild.channels.cache.get(channels.announcements);
+  if (!ch) return;
+
+  const deal = DAILY_DEALS[Math.floor(Math.random() * DAILY_DEALS.length)];
+  const svc = SERVICES[deal.code];
+
+  const embed = new EmbedBuilder()
+    .setColor(0xf43f5e)
+    .setTitle('🔥 今日限時優惠！')
+    .setDescription(
+      `**${deal.desc}**\n\n` +
+      `服務：${deal.code} ${svc.name}\n` +
+      `優惠：**${deal.discount}**\n\n` +
+      `⏰ 僅限今日！加 LINE **23roger02** 報編號 + 說「今日優惠」\n` +
+      `🛡️ 追繳三重賠付照樣適用`
+    )
+    .setFooter({ text: '午夜俱樂部 · 每日一檔限時優惠' })
+    .setTimestamp();
+  ch.send({ content: '@everyone 🔥 今日優惠來啦！', embeds: [embed] });
+
+  await sendTelegram(`🔥 今日優惠已發送\n${deal.desc}`);
+}, { timezone: 'Asia/Taipei' });
+
+// ── 每日報表（每晚 23:00）── 完整版 ──
 cron.schedule('0 23 * * *', async () => {
-  const today = new Date().toLocaleDateString('zh-TW');
+  const now = new Date();
+  const today = now.toLocaleDateString('zh-TW');
+  const todayISO = now.toISOString().slice(0, 10);
 
-  // 計算今日數據
-  const completedToday = [...orders.values()].filter(o =>
-    o.status === 'completed' && o.completedAt && o.completedAt.startsWith(new Date().toISOString().slice(0, 10))
-  );
-  const pendingCount = [...orders.values()].filter(o => o.status === 'pending').length;
-  const activeCount = [...orders.values()].filter(o => o.status === 'active').length;
-
+  const allOrders = [...orders.values()];
+  const completedToday = allOrders.filter(o => o.status === 'completed' && o.completedAt && o.completedAt.startsWith(todayISO));
+  const pendingCount = allOrders.filter(o => o.status === 'pending').length;
+  const activeCount = allOrders.filter(o => o.status === 'active').length;
   const totalRevenue = completedToday.reduce((sum, o) => sum + o.price, 0);
-  const serviceBreakdown = {};
-  completedToday.forEach(o => {
-    serviceBreakdown[o.serviceName] = (serviceBreakdown[o.serviceName] || 0) + 1;
-  });
 
-  const breakdownStr = Object.entries(serviceBreakdown)
-    .map(([k, v]) => `  ${k}: ${v} 單`)
+  // 服務分類統計
+  const serviceBreakdown = {};
+  completedToday.forEach(o => { serviceBreakdown[o.serviceName] = (serviceBreakdown[o.serviceName] || 0) + 1; });
+  const breakdownStr = Object.entries(serviceBreakdown).map(([k, v]) => `  ${k}: ${v} 單`).join('\n') || '  （無）';
+
+  // 每筆訂單明細
+  const orderDetails = completedToday.map(o => {
+    const duration = getTimeDiff(o.acceptedAt, o.completedAt);
+    return `  #${o.id} | ${o.serviceName} | ${o.price}T | ${o.booster || '未知'} | ${duration}`;
+  }).join('\n') || '  （今日無完成訂單）';
+
+  // 打手績效
+  const boosterToday = {};
+  completedToday.forEach(o => {
+    if (!o.booster) return;
+    const b = boosterToday[o.booster] || { count: 0, revenue: 0 };
+    b.count++; b.revenue += o.price;
+    boosterToday[o.booster] = b;
+  });
+  const boosterStr = Object.entries(boosterToday)
+    .sort((a, b) => b[1].revenue - a[1].revenue)
+    .map(([name, s]) => `  ${name}: ${s.count}單 / ${s.revenue.toLocaleString()}T`)
     .join('\n') || '  （無）';
 
-  const report =
-    `📊 每日業務報表 — ${today}\n` +
-    `━━━━━━━━━━━━━━\n` +
-    `✅ 今日完成：${completedToday.length} 單\n` +
-    `💰 今日營收：${totalRevenue.toLocaleString()} T\n` +
-    `⚡ 進行中：${activeCount} 單\n` +
-    `🔔 待接單：${pendingCount} 單\n` +
-    `━━━━━━━━━━━━━━\n` +
-    `📋 服務明細：\n${breakdownStr}\n` +
-    `━━━━━━━━━━━━━━\n` +
-    `累計總訂單：${orders.size} 單`;
+  // VIP 客戶統計
+  const vipCount = [...vipData.values()].filter(v => getVipTier(v.totalSpent).name !== 'Rookie').length;
+  const openTickets = [...tickets.values()].filter(t => t.status === 'open').length;
 
-  // 發到 Telegram
+  // 月累計
+  const monthStart = todayISO.slice(0, 7); // YYYY-MM
+  const monthOrders = allOrders.filter(o => o.status === 'completed' && o.completedAt && o.completedAt.startsWith(monthStart));
+  const monthRevenue = monthOrders.reduce((s, o) => s + o.price, 0);
+
+  const report =
+    `📊 每日營運報表 — ${today}\n` +
+    `━━━━━━━━━━━━━━━━━━\n\n` +
+    `📈 今日總覽\n` +
+    `  ✅ 完成：${completedToday.length} 單\n` +
+    `  💰 營收：${totalRevenue.toLocaleString()} T\n` +
+    `  ⚡ 進行中：${activeCount} 單\n` +
+    `  🔔 待接單：${pendingCount} 單\n` +
+    `  🎫 待處理工單：${openTickets}\n\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `📋 訂單明細（編號｜服務｜金額｜打手｜耗時）\n${orderDetails}\n\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `📊 服務統計\n${breakdownStr}\n\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `🎮 打手績效\n${boosterStr}\n\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `📅 本月累計\n` +
+    `  訂單：${monthOrders.length} 單\n` +
+    `  營收：${monthRevenue.toLocaleString()} T\n` +
+    `  VIP會員：${vipCount} 人\n` +
+    `  總累計訂單：${allOrders.length} 單`;
+
   await sendTelegram(report);
 
-  // 發到 Discord #daily-stats
+  // Discord 報表
   const guild = client.guilds.cache.get(GUILD_ID);
   if (guild && channels.dailyStats) {
     const statsCh = guild.channels.cache.get(channels.dailyStats);
     if (statsCh) {
-      const embed = new EmbedBuilder()
-        .setColor(0x8b5cf6)
-        .setTitle(`📊 每日報表 — ${today}`)
+      const embed = new EmbedBuilder().setColor(0x8b5cf6).setTitle(`📊 每日報表 — ${today}`)
         .addFields(
           { name: '✅ 完成', value: `${completedToday.length} 單`, inline: true },
           { name: '💰 營收', value: `${totalRevenue.toLocaleString()} T`, inline: true },
           { name: '⚡ 進行中', value: `${activeCount} 單`, inline: true },
           { name: '🔔 待接', value: `${pendingCount} 單`, inline: true },
-          { name: '📋 明細', value: breakdownStr },
-        )
-        .setTimestamp();
+          { name: '📋 服務統計', value: breakdownStr },
+          { name: '🎮 打手績效', value: boosterStr },
+          { name: '📅 本月累計', value: `${monthOrders.length} 單 / ${monthRevenue.toLocaleString()} T` },
+        ).setTimestamp();
       statsCh.send({ embeds: [embed] });
     }
   }
-
-  // 重置日統計
-  dailyStats.revenue = 0;
-  dailyStats.count = 0;
-  dailyStats.services = {};
+  dailyStats.revenue = 0; dailyStats.count = 0; dailyStats.services = {};
 }, { timezone: 'Asia/Taipei' });
 
+// ── 月度財務報表（每月1號 09:00） ──
+const MONTHLY_COST = 3500; // 網站維護月費
+const COMMISSION_RATE = 0.05; // 抽成比例 5%
+
+cron.schedule('0 9 1 * *', async () => {
+  const now = new Date();
+  const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const monthLabel = `${lastMonth.getFullYear()}/${String(lastMonth.getMonth() + 1).padStart(2, '0')}`;
+  const monthPrefix = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`;
+
+  const allOrders = [...orders.values()];
+  const monthOrders = allOrders.filter(o => o.status === 'completed' && o.completedAt && o.completedAt.startsWith(monthPrefix));
+  const totalRevenue = monthOrders.reduce((s, o) => s + o.price, 0);
+  const commission = Math.round(totalRevenue * COMMISSION_RATE);
+  const profit = commission - MONTHLY_COST;
+
+  // 服務類別營收
+  const catRevenue = {};
+  monthOrders.forEach(o => {
+    const svc = SERVICES[o.serviceCode];
+    const cat = svc ? svc.cat : '其他';
+    catRevenue[cat] = (catRevenue[cat] || 0) + o.price;
+  });
+  const catStr = Object.entries(catRevenue)
+    .sort((a, b) => b[1] - a[1])
+    .map(([cat, rev]) => `  ${cat}: ${rev.toLocaleString()}T (${Math.round(rev/totalRevenue*100)}%)`)
+    .join('\n') || '  （無）';
+
+  // 打手月排行
+  const boosterMonth = {};
+  monthOrders.forEach(o => {
+    if (!o.booster) return;
+    const b = boosterMonth[o.booster] || { count: 0, revenue: 0 };
+    b.count++; b.revenue += o.price;
+    boosterMonth[o.booster] = b;
+  });
+  const boosterRank = Object.entries(boosterMonth)
+    .sort((a, b) => b[1].revenue - a[1].revenue)
+    .map(([name, s], i) => `  ${i+1}. ${name}: ${s.count}單 / ${s.revenue.toLocaleString()}T`)
+    .join('\n') || '  （無）';
+
+  // 平均客單價
+  const avgPrice = monthOrders.length > 0 ? Math.round(totalRevenue / monthOrders.length) : 0;
+
+  // VIP 統計
+  const vipBreakdown = {};
+  [...vipData.values()].forEach(v => {
+    const tier = getVipTier(v.totalSpent).name;
+    vipBreakdown[tier] = (vipBreakdown[tier] || 0) + 1;
+  });
+  const vipStr = Object.entries(vipBreakdown)
+    .filter(([k]) => k !== 'Rookie')
+    .map(([k, v]) => `  ${k}: ${v}人`)
+    .join('\n') || '  （無VIP會員）';
+
+  const report =
+    `💰 月度財務報表 — ${monthLabel}\n` +
+    `━━━━━━━━━━━━━━━━━━\n\n` +
+    `📈 營收總覽\n` +
+    `  總營收：${totalRevenue.toLocaleString()} T\n` +
+    `  總訂單：${monthOrders.length} 單\n` +
+    `  平均客單價：${avgPrice.toLocaleString()} T\n\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `💵 財務計算\n` +
+    `  抽成比例：${(COMMISSION_RATE * 100)}%\n` +
+    `  抽成收入：${commission.toLocaleString()} T\n` +
+    `  網站維護費：-${MONTHLY_COST.toLocaleString()} T\n` +
+    `  ────────────\n` +
+    `  淨利潤：${profit >= 0 ? '+' : ''}${profit.toLocaleString()} T ${profit >= 0 ? '✅' : '⚠️'}\n\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `📊 營收分類\n${catStr}\n\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `🏆 打手月排行\n${boosterRank}\n\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `👑 VIP 會員分布\n${vipStr}\n\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `📌 損益平衡點：月營收 ≥ ${Math.ceil(MONTHLY_COST / COMMISSION_RATE).toLocaleString()} T\n` +
+    `   即每月 ≥ ${Math.ceil(MONTHLY_COST / COMMISSION_RATE / avgPrice || 18)} 單（以平均客單價計算）`;
+
+  await sendTelegram(report);
+}, { timezone: 'Asia/Taipei' });
+
+
 // ============================================================
-// Express API（接收網站訂單）
+// Express API
 // ============================================================
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// CORS
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
-  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
 
-// 健康檢查
 app.get('/', (req, res) => {
-  res.json({
-    status: '🌙 MK-01 Online',
-    orders: orders.size,
-    uptime: process.uptime()
-  });
+  res.json({ status: '🌙 MK-01 v3.0 Online', orders: orders.size, uptime: process.uptime(), vipMembers: vipData.size, openTickets: [...tickets.values()].filter(t => t.status === 'open').length });
 });
 
-// ── 新訂單 API ──
 app.post('/api/order', async (req, res) => {
   try {
     const { serviceCode, gameId, contactId, airplane, map, note, customerName } = req.body;
-
     const service = SERVICES[serviceCode];
     const svcName = req.body.serviceName || (service ? `${serviceCode} ${service.name}` : serviceCode);
     const svcPrice = service ? service.price : 0;
     const svcGuarantee = service ? service.guarantee : null;
-
     const orderId = `MC${++orderCounter}`;
-    const order = {
-      id: orderId,
-      serviceCode,
-      serviceName: svcName,
-      price: svcPrice,
-      guarantee: svcGuarantee,
-      gameId: gameId || '未填',
-      contactId: contactId || '未填',
-      airplane: airplane || '未指定',
-      map: map || '不指定',
-      note: note || '無',
-      customerName: customerName || '網站老闆',
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      booster: null,
-      boosterId: null,
-      acceptedAt: null,
-      completedAt: null,
-    };
-
+    const order = { id: orderId, serviceCode, serviceName: svcName, price: svcPrice, guarantee: svcGuarantee, gameId: gameId || '未填', contactId: contactId || '未填', airplane: airplane || '未指定', map: map || '不指定', note: note || '無', customerName: customerName || '網站老闆', status: 'pending', createdAt: new Date().toISOString(), booster: null, boosterId: null, acceptedAt: null, completedAt: null };
     orders.set(orderId, order);
-
-    // ── Discord 新訂單通知 ──
     const guild = client.guilds.cache.get(GUILD_ID);
     if (guild && channels.newOrders) {
       const ch = guild.channels.cache.get(channels.newOrders);
       if (ch) {
         const boosterRole = guild.roles.cache.find(r => r.name === 'Booster');
-
-        const embed = new EmbedBuilder()
-          .setColor(0x00e5ff)
-          .setTitle(`🔔 新訂單 #${orderId}`)
+        const embed = new EmbedBuilder().setColor(0x00e5ff).setTitle(`🔔 新訂單 #${orderId}`)
           .setDescription(boosterRole ? `<@&${boosterRole.id}> 有新單！` : '有新訂單！')
-          .addFields(
-            { name: '🛡️ 服務', value: order.serviceName, inline: true },
-            { name: '💰 金額', value: `${order.price} T`, inline: true },
-            { name: '🎯 保底', value: order.guarantee || '無', inline: true },
-            { name: '🎮 遊戲ID', value: order.gameId, inline: true },
-            { name: '✈️ 飛機', value: order.airplane, inline: true },
-            { name: '🗺️ 地圖', value: order.map, inline: true },
-            { name: '📝 備註', value: order.note },
-          )
-          .setFooter({ text: '點擊下方按鈕接單' })
-          .setTimestamp();
-
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`accept_${orderId}`)
-            .setLabel('🎮 接下此單')
-            .setStyle(ButtonStyle.Primary),
-        );
-
+          .addFields({ name: '🛡️ 服務', value: order.serviceName, inline: true },{ name: '💰 金額', value: `${order.price} T`, inline: true },{ name: '🎯 保底', value: order.guarantee || '無', inline: true },{ name: '🎮 遊戲ID', value: order.gameId, inline: true },{ name: '✈️ 飛機', value: order.airplane, inline: true },{ name: '🗺️ 地圖', value: order.map, inline: true },{ name: '📝 備註', value: order.note })
+          .setFooter({ text: '點擊下方按鈕接單' }).setTimestamp();
+        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`accept_${orderId}`).setLabel('🎮 接下此單').setStyle(ButtonStyle.Primary));
         const sentMsg = await ch.send({ embeds: [embed], components: [row] });
         orderMessages.set(orderId, { newOrder: { channelId: ch.id, messageId: sentMsg.id } });
       }
     }
-
-    // ── Telegram 通知 Roger ──
-    await sendTelegram(
-      `🔔 新訂單 #${orderId}\n` +
-      `━━━━━━━━━━\n` +
-      `服務：${order.serviceName}\n` +
-      `金額：${order.price} T\n` +
-      `保底：${order.guarantee || '無'}\n` +
-      `遊戲ID：${order.gameId}\n` +
-      `聯繫：${order.contactId}\n` +
-      `飛機：${order.airplane}\n` +
-      `地圖：${order.map}\n` +
-      `備註：${order.note}`
-    );
-
+    await sendTelegram(`🔔 新訂單 #${orderId}\n服務：${order.serviceName}\n金額：${order.price} T\n保底：${order.guarantee || '無'}\n遊戲ID：${order.gameId}\n聯繫：${order.contactId}`);
     res.json({ success: true, orderId, message: `訂單 ${orderId} 已建立` });
-  } catch (e) {
-    console.error('訂單錯誤:', e);
-    res.status(500).json({ error: '伺服器錯誤' });
-  }
+  } catch (e) { console.error('訂單錯誤:', e); res.status(500).json({ error: '伺服器錯誤' }); }
 });
 
-// ── 查詢訂單 ──
-app.get('/api/order/:id', (req, res) => {
-  const order = orders.get(req.params.id);
-  if (!order) return res.status(404).json({ error: '找不到訂單' });
-  res.json(order);
-});
-
-// ── 所有訂單（管理用）──
-app.get('/api/orders', (req, res) => {
-  res.json([...orders.values()].reverse());
-});
-
-// ── 統計 ──
+app.get('/api/order/:id', (req, res) => { const order = orders.get(req.params.id); if (!order) return res.status(404).json({ error: '找不到訂單' }); res.json(order); });
+app.get('/api/orders', (req, res) => { res.json([...orders.values()].reverse()); });
 app.get('/api/stats', (req, res) => {
   const all = [...orders.values()];
+  res.json({ total: all.length, pending: all.filter(o => o.status === 'pending').length, active: all.filter(o => o.status === 'active').length, completed: all.filter(o => o.status === 'completed').length, totalRevenue: all.filter(o => o.status === 'completed').reduce((s, o) => s + o.price, 0) });
+});
+
+app.get('/api/live-orders', (req, res) => {
+  const recent = [...orders.values()]
+    .filter(o => o.status === 'completed')
+    .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
+    .slice(0, 10)
+    .map(o => ({
+      id: o.id, service: o.serviceName, price: o.price,
+      booster: o.booster ? o.booster.replace(/(.{2}).*(.{2})/, '$1***$2') : '未知',
+      completedAt: o.completedAt, timeDiff: getTimeDiff(o.acceptedAt, o.completedAt),
+    }));
+  res.json(recent);
+});
+
+app.get('/api/vip/:contactId', (req, res) => {
+  const data = vipData.get(req.params.contactId);
+  if (!data) return res.json({ found: false, tier: 'Rookie', totalSpent: 0, discount: '原價', orders: [] });
+  const tier = getVipTier(data.totalSpent);
   res.json({
-    total: all.length,
-    pending: all.filter(o => o.status === 'pending').length,
-    active: all.filter(o => o.status === 'active').length,
-    completed: all.filter(o => o.status === 'completed').length,
-    totalRevenue: all.filter(o => o.status === 'completed').reduce((s, o) => s + o.price, 0),
+    found: true, tier: tier.name, emoji: tier.emoji, totalSpent: data.totalSpent,
+    discount: tier.discount === 1 ? '原價' : `${Math.round(tier.discount * 100)}%`,
+    orderCount: data.orders.length, recentOrders: data.orders.slice(-5).reverse(),
+    nextTier: VIP_TIERS[VIP_TIERS.indexOf(tier) - 1] || null,
   });
 });
 
-// ============================================================
-// 工具函式
-// ============================================================
-function getTimeDiff(start, end) {
-  if (!start || !end) return '未知';
-  const diff = new Date(end) - new Date(start);
-  const hours = Math.floor(diff / 3600000);
-  const mins = Math.floor((diff % 3600000) / 60000);
-  if (hours > 0) return `${hours}h ${mins}m`;
-  return `${mins}m`;
-}
-
-// ============================================================
-// 啟動
-// ============================================================
-app.listen(PORT, () => {
-  console.log(`🌐 API 伺服器運行中：port ${PORT}`);
+app.get('/api/services', (req, res) => { res.json(SERVICES); });
+app.get('/api/leaderboard', (req, res) => {
+  const sorted = [...boosterStats.entries()].sort((a, b) => b[1].completed - a[1].completed).slice(0, 10)
+    .map(([tag, s], i) => ({ rank: i + 1, name: tag, completed: s.completed, revenue: s.revenue }));
+  res.json(sorted);
 });
+app.get('/api/tickets', (req, res) => { res.json([...tickets.values()].reverse().slice(0, 20)); });
 
-client.login(DISCORD_TOKEN).catch(e => {
-  console.error('Discord 登入失敗:', e.message);
-  process.exit(1);
-});
+function getTimeDiff(start, end) { if (!start || !end) return '未知'; const diff = new Date(end) - new Date(start); const hours = Math.floor(diff / 3600000); const mins = Math.floor((diff % 3600000) / 60000); if (hours > 0) return `${hours}h ${mins}m`; return `${mins}m`; }
+
+app.listen(PORT, () => { console.log(`🌐 API v3.0 運行中：port ${PORT}`); });
+client.login(DISCORD_TOKEN).catch(e => { console.error('Discord 登入失敗:', e.message); process.exit(1); });
