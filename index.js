@@ -67,6 +67,8 @@ const SERVICES = {
   'P-2': { name: '娛樂女陪/H', price: 350, guarantee: null, cat: '陪玩' },
   'P-3': { name: '長時陪做套餐', price: 3688, guarantee: null, cat: '陪玩' },
   'P-4': { name: '任務救急', price: 260, guarantee: null, cat: '陪玩' },
+  'W-1': { name: '扶貧單A', price: 350, guarantee: '700萬', cat: '扶貧單' },
+  'W-2': { name: '扶貧單B', price: 700, guarantee: '1,500萬', cat: '扶貧單' },
 };
 
 // ── VIP 等級定義 ──
