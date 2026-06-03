@@ -326,18 +326,9 @@ client.on('interactionCreate', async interaction => {
     order.boosterId = interaction.user.id;
     order.acceptedAt = new Date().toISOString();
 
-    // 更新原始訊息
-    const embed = EmbedBuilder.from(interaction.message.embeds[0])
-      .setColor(0xfbbf24)
-      .addFields({ name: '🎮 接單打手', value: interaction.user.tag })
-      .setTitle(`⚡ 訂單 #${orderId} — 進行中`);
-
-    const disabledRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`done_${orderId}`).setLabel('✅ 完成訂單').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`problem_${orderId}`).setLabel('⚠️ 回報問題').setStyle(ButtonStyle.Danger),
-    );
-
-    await interaction.update({ embeds: [embed], components: [disabledRow] });
+    // 刪除新訂單頻道的這條訊息（不要留在新訂單裡造成混亂）
+    await interaction.deferUpdate();
+    try { await interaction.message.delete(); } catch(e) {}
 
     // 發到進行中頻道
     if (channels.activeOrders) {
@@ -345,15 +336,22 @@ client.on('interactionCreate', async interaction => {
       if (activeCh) {
         const activeEmbed = new EmbedBuilder()
           .setColor(0xfbbf24)
-          .setTitle(`⚡ 訂單 #${orderId} 已開始`)
+          .setTitle(`⚡ 訂單 #${orderId} — 進行中`)
           .addFields(
-            { name: '服務', value: order.serviceName, inline: true },
-            { name: '金額', value: `${order.price} T`, inline: true },
-            { name: '打手', value: interaction.user.tag, inline: true },
-            { name: '老闆', value: order.customerName || '未知', inline: true },
+            { name: '🛡️ 服務', value: order.serviceName, inline: true },
+            { name: '💰 金額', value: `${order.price} T`, inline: true },
+            { name: '🎮 打手', value: interaction.user.tag, inline: true },
+            { name: '👤 老闆', value: order.customerName || '未知', inline: true },
+            { name: '🎯 保底', value: order.guarantee || '無', inline: true },
+            { name: '🗺️ 地圖', value: order.map || '不指定', inline: true },
           )
+          .setFooter({ text: '完成後點下方按鈕' })
           .setTimestamp();
-        const activeMsg = await activeCh.send({ embeds: [activeEmbed] });
+        const activeRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`done_${orderId}`).setLabel('✅ 完成訂單').setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`problem_${orderId}`).setLabel('⚠️ 回報問題').setStyle(ButtonStyle.Danger),
+        );
+        const activeMsg = await activeCh.send({ embeds: [activeEmbed], components: [activeRow] });
         // 儲存進行中訊息的參考
         const ref = orderMessages.get(orderId) || {};
         ref.active = { channelId: activeCh.id, messageId: activeMsg.id };
