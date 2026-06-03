@@ -539,17 +539,17 @@ app.post('/api/order', async (req, res) => {
     const { serviceCode, gameId, contactId, airplane, map, note, customerName } = req.body;
 
     const service = SERVICES[serviceCode];
-    if (!service) {
-      return res.status(400).json({ error: '無效的服務編號' });
-    }
+    const svcName = req.body.serviceName || (service ? `${serviceCode} ${service.name}` : serviceCode);
+    const svcPrice = service ? service.price : 0;
+    const svcGuarantee = service ? service.guarantee : null;
 
     const orderId = `MC${++orderCounter}`;
     const order = {
       id: orderId,
       serviceCode,
-      serviceName: `${serviceCode} ${service.name}`,
-      price: service.price,
-      guarantee: service.guarantee,
+      serviceName: svcName,
+      price: svcPrice,
+      guarantee: svcGuarantee,
       gameId: gameId || '未填',
       contactId: contactId || '未填',
       airplane: airplane || '未指定',
