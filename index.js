@@ -19,6 +19,7 @@ const PORT = process.env.PORT || 3000;
 
 // ── 訂單資料庫（記憶體，重啟會清空，正式版可接 MongoDB） ──
 const orders = new Map();
+const orderMessages = new Map(); // 追蹤訂單對應的 Discord 訊息，用於刪除
 let orderCounter = 1000;
 const dailyStats = { revenue: 0, count: 0, services: {} };
 
@@ -195,8 +196,11 @@ async function setupChannels(guild) {
   for (const cd of channelDefs) {
     const parentId = categories[cd.cat] || categories.catPublic;
     const chType = cd.voice ? ChannelType.GuildVoice : ChannelType.GuildText;
+    // 先找同分類下的，再找全伺服器同名的（避免重複建立）
     let ch = guild.channels.cache.find(
       c => c.name === cd.name && c.parentId === parentId
+    ) || guild.channels.cache.find(
+      c => c.name === cd.name
     );
     if (!ch) {
       const chPerms = [];
@@ -349,7 +353,11 @@ client.on('interactionCreate', async interaction => {
             { name: '老闆', value: order.customerName || '未知', inline: true },
           )
           .setTimestamp();
-        activeCh.send({ embeds: [activeEmbed] });
+        const activeMsg = await activeCh.send({ embeds: [activeEmbed] });
+        // 儲存進行中訊息的參考
+        const ref = orderMessages.get(orderId) || {};
+        ref.active = { channelId: activeCh.id, messageId: activeMsg.id };
+        orderMessages.set(orderId, ref);
       }
     }
 
@@ -377,11 +385,23 @@ client.on('interactionCreate', async interaction => {
     dailyStats.count += 1;
     dailyStats.services[order.serviceCode] = (dailyStats.services[order.serviceCode] || 0) + 1;
 
-    const embed = EmbedBuilder.from(interaction.message.embeds[0])
-      .setColor(0x34d399)
-      .setTitle(`✅ 訂單 #${orderId} — 已完成`);
+    // 刪除進行中頻道的這條訊息（當前互動的訊息）
+    try { await interaction.message.delete(); } catch(e) {}
 
-    await interaction.update({ embeds: [embed], components: [] });
+    // 刪除新訂單頻道的原始訊息
+    const msgRef = orderMessages.get(orderId);
+    if (msgRef && msgRef.newOrder) {
+      try {
+        const nCh = guild.channels.cache.get(msgRef.newOrder.channelId);
+        if (nCh) { const m = await nCh.messages.fetch(msgRef.newOrder.messageId); await m.delete(); }
+      } catch(e) {}
+    }
+    if (msgRef && msgRef.active) {
+      try {
+        const aCh = guild.channels.cache.get(msgRef.active.channelId);
+        if (aCh) { const m = await aCh.messages.fetch(msgRef.active.messageId); await m.delete(); }
+      } catch(e) {}
+    }
 
     // 發到完成頻道
     if (channels.completed) {
@@ -430,15 +450,18 @@ client.on('interactionCreate', async interaction => {
 // ============================================================
 async function sendTelegram(text) {
   try {
-    await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
+    console.log(`📨 發送 Telegram... Token: ${TG_TOKEN ? TG_TOKEN.slice(0,10)+'...' : 'MISSING'}, Chat: ${TG_CHAT || 'MISSING'}`);
+    const res = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: TG_CHAT,
-        text: `🌙 午夜俱樂部\n━━━━━━━━━━\n${text}`,
-        parse_mode: 'HTML'
+        text: `🌙 午夜俱樂部\n━━━━━━━━━━\n${text}`
       })
     });
+    const data = await res.json();
+    if (!data.ok) console.error('Telegram API 錯誤:', JSON.stringify(data));
+    else console.log('✅ Telegram 發送成功');
   } catch (e) {
     console.error('Telegram 發送失敗:', e.message);
   }
@@ -596,7 +619,8 @@ app.post('/api/order', async (req, res) => {
             .setStyle(ButtonStyle.Primary),
         );
 
-        ch.send({ embeds: [embed], components: [row] });
+        const sentMsg = await ch.send({ embeds: [embed], components: [row] });
+        orderMessages.set(orderId, { newOrder: { channelId: ch.id, messageId: sentMsg.id } });
       }
     }
 
