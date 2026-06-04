@@ -641,8 +641,10 @@ img { max-width: 100%; display: block; }
     <div class="pricing-panel" data-panel="companion">
       <div class="price-grid">
         <div class="price-card"><div class="price-card-code">P-1</div><div class="price-card-name">技術男陪</div><div class="price-card-price">350 <span>T/H</span></div><button class="price-card-btn" onclick="selectService('P-1')">選擇此服務</button></div>
-        <div class="price-card"><div class="price-card-code">P-2</div><div class="price-card-name">娛樂女陪</div><div class="price-card-price">350 <span>T/H</span></div><button class="price-card-btn" onclick="selectService('P-2')">選擇此服務</button></div>
-        <div class="price-card hot"><div class="price-card-code">P-3</div><div class="price-card-name">長時陪做套餐</div><div class="price-card-price">3,688 <span>T</span></div><p style="margin-top:8px;font-size:0.85rem;color:var(--text-secondary);">10H + 60任務</p><button class="price-card-btn" onclick="selectService('P-3')">選擇此服務</button></div>
+        <div class="price-card"><div class="price-card-code">P-2</div><div class="price-card-name">娛樂女陪</div><div class="price-card-price">400 <span>T/H</span></div><button class="price-card-btn" onclick="selectService('P-2')">選擇此服務</button></div>
+        <div class="price-card hot"><div class="price-card-code">P-5</div><div class="price-card-name">技術女陪</div><div class="price-card-price">600 <span>T/H</span></div><button class="price-card-btn" onclick="selectService('P-5')">選擇此服務</button></div>
+        <div class="price-card"><div class="price-card-code">P-6</div><div class="price-card-name">TW女陪</div><div class="price-card-price">450 <span>T/H</span></div><button class="price-card-btn" onclick="selectService('P-6')">選擇此服務</button></div>
+        <div class="price-card"><div class="price-card-code">P-3</div><div class="price-card-name">長時陪做套餐</div><div class="price-card-price">3,688 <span>T</span></div><p style="margin-top:8px;font-size:0.85rem;color:var(--text-secondary);">10H + 60任務</p><button class="price-card-btn" onclick="selectService('P-3')">選擇此服務</button></div>
         <div class="price-card"><div class="price-card-code">P-4</div><div class="price-card-name">任務救急</div><div class="price-card-price">260 <span>T</span></div><button class="price-card-btn" onclick="selectService('P-4')">選擇此服務</button></div>
       </div>
     </div>
@@ -839,7 +841,9 @@ img { max-width: 100%; display: block; }
             </optgroup>
             <optgroup label="🎮 陪玩">
               <option value="P-1">P-1 技術男陪 — 350T/H</option>
-              <option value="P-2">P-2 娛樂女陪 — 350T/H</option>
+              <option value="P-2">P-2 娛樂女陪 — 400T/H</option>
+              <option value="P-5">P-5 技術女陪 — 600T/H</option>
+              <option value="P-6">P-6 TW女陪 — 450T/H</option>
               <option value="P-3">P-3 套餐 — 3,688T 🔥</option>
               <option value="P-4">P-4 救急 — 260T</option>
             </optgroup>
@@ -1023,7 +1027,7 @@ const SERVICES = {
   'S-1':{name:'機密文件',price:4100,guarantee:'6,888萬'},'S-2':{name:'理想國',price:2680,guarantee:'3,999萬'},
   'A-1':{name:'S5 3x3代肝',price:2800,guarantee:null},'A-2':{name:'單日代肝8H',price:1200,guarantee:null},
   'A-3':{name:'週套餐代肝',price:7500,guarantee:null},
-  'P-1':{name:'技術男陪/H',price:350,guarantee:null},'P-2':{name:'娛樂女陪/H',price:350,guarantee:null},
+  'P-1':{name:'技術男陪/H',price:350,guarantee:null},'P-2':{name:'娛樂女陪/H',price:400,guarantee:null},'P-5':{name:'技術女陪/H',price:600,guarantee:null},'P-6':{name:'TW女陪/H',price:450,guarantee:null},
   'P-3':{name:'長時陪做套餐',price:3688,guarantee:null},'P-4':{name:'任務救急',price:260,guarantee:null},
   'W-1':{name:'扶貧單A',price:350,guarantee:'700萬'},
   'W-2':{name:'扶貧單B',price:700,guarantee:'1,500萬'},
