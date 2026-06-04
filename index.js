@@ -36,6 +36,34 @@ const boosterStats = new Map(); // key: odiscord usertag, value: { completed, re
 const tickets = new Map();
 let ticketCounter = 0;
 
+// ── 推薦系統資料庫 ──
+const referrals = new Map(); // key: referralCode, value: { ownerId, ownerName, referred:[], totalReferred, milestone, coupons:[] }
+const referralByContact = new Map(); // key: contactId → referralCode (反查)
+
+// ── 推薦里程碑定義 ──
+const REFERRAL_MILESTONES = [
+  { count: 1,  name: '🌱 入門推薦人', reward: '100T 折抵券', rewardT: 100 },
+  { count: 3,  name: '⭐ 暗區引路人', reward: '扶貧單 A 免費一次（350T）', rewardT: 350, freeService: 'W-1' },
+  { count: 5,  name: '🔥 午夜傳教士', reward: '護航① 免費一次（750T）+ VIP累計+2000T', rewardT: 750, freeService: 'E-1', vipBonus: 2000 },
+  { count: 10, name: '👑 暗區教父', reward: '永久9折 + 護航③ 免費（1700T）+ Discord專屬角色', rewardT: 1700, freeService: 'E-3', permDiscount: 0.90 },
+];
+
+function generateReferralCode(name) {
+  const prefix = (name || 'MC').replace(/[^a-zA-Z0-9一-鿿]/g, '').slice(0, 4).toUpperCase();
+  const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `REF-${prefix}-${rand}`;
+}
+
+function checkMilestone(referralData) {
+  const count = referralData.totalReferred;
+  // 找到最高已達成的里程碑
+  let reached = null;
+  for (const m of REFERRAL_MILESTONES) {
+    if (count >= m.count) reached = m;
+  }
+  return reached;
+}
+
 // ── 頻道 ID 快取 ──
 const channels = {};
 
@@ -372,6 +400,54 @@ client.on('interactionCreate', async interaction => {
       const newTier = getVipTier(vip.totalSpent);
       if (newTier.min > oldTier.min) {
         await announceVipUpgrade(guild, order.customerName || order.contactId, newTier, vip.totalSpent);
+      }
+    }
+
+    // ── 推薦追蹤（訂單完成時觸發） ──
+    if (order.referralCode) {
+      const refData = referrals.get(order.referralCode);
+      if (refData) {
+        const alreadyReferred = refData.referred.find(r => r.contactId === order.contactId);
+        if (!alreadyReferred) {
+          refData.referred.push({ contactId: order.contactId, name: order.customerName, date: order.completedAt, orderAmount: order.price });
+          refData.totalReferred = refData.referred.length;
+
+          // 推薦人獲得 5% 折抵券
+          const couponAmount = Math.round(order.price * 0.05);
+          refData.coupons.push({ amount: couponAmount, reason: `推薦 ${order.customerName} 首單返還`, date: order.completedAt, used: false });
+
+          // 檢查里程碑
+          const oldMilestone = refData.milestone;
+          const newMilestone = checkMilestone(refData);
+          if (newMilestone && (!oldMilestone || newMilestone.count > oldMilestone.count)) {
+            refData.milestone = newMilestone;
+            if (newMilestone.permDiscount) refData.permDiscount = newMilestone.permDiscount;
+            if (newMilestone.vipBonus && refData.ownerId) {
+              const vip = vipData.get(refData.ownerId) || { totalSpent: 0, orders: [], name: refData.ownerName };
+              vip.totalSpent += newMilestone.vipBonus;
+              vipData.set(refData.ownerId, vip);
+            }
+
+            // Discord + Telegram 里程碑公告
+            if (channels.announcements) {
+              const annCh = guild.channels.cache.get(channels.announcements);
+              if (annCh) {
+                const mEmbed = new EmbedBuilder().setColor(0xec4899).setTitle(`🤝 推薦里程碑達成！`)
+                  .setDescription(`🎉 **${refData.ownerName}** 達成 **${newMilestone.name}**！\n\n累計推薦：${refData.totalReferred} 人\n獎勵：${newMilestone.reward}\n\n推薦碼：\`${refData.code}\`\n使用推薦碼下單，雙方都有獎勵！🌙`)
+                  .setTimestamp();
+                annCh.send({ embeds: [mEmbed] });
+              }
+            }
+            await sendTelegram(`🤝 推薦里程碑！\n${refData.ownerName} 達成 ${newMilestone.name}\n累計推薦：${refData.totalReferred} 人\n獎勵：${newMilestone.reward}`);
+          }
+
+          // 10 人以上每多推 1 人 +150T
+          if (refData.totalReferred > 10) {
+            refData.coupons.push({ amount: 150, reason: `超級推薦人額外獎勵（第${refData.totalReferred}人）`, date: order.completedAt, used: false });
+          }
+
+          referrals.set(order.referralCode, refData);
+        }
       }
     }
 
@@ -865,13 +941,28 @@ app.get('/', (req, res) => {
 
 app.post('/api/order', async (req, res) => {
   try {
-    const { serviceCode, gameId, contactId, airplane, map, note, customerName } = req.body;
+    const { serviceCode, gameId, contactId, airplane, map, note, customerName, referralCode } = req.body;
     const service = SERVICES[serviceCode];
     const svcName = req.body.serviceName || (service ? `${serviceCode} ${service.name}` : serviceCode);
-    const svcPrice = service ? service.price : 0;
+    let svcPrice = service ? service.price : 0;
     const svcGuarantee = service ? service.guarantee : null;
+
+    // ── 推薦碼處理 ──
+    let referralApplied = null;
+    if (referralCode) {
+      const refData = referrals.get(referralCode.toUpperCase());
+      if (refData && refData.ownerId !== contactId) {
+        // 新客首單 95 折
+        const isFirstOrder = !refData.referred.find(r => r.contactId === contactId);
+        if (isFirstOrder) {
+          svcPrice = Math.round(svcPrice * 0.95);
+          referralApplied = { code: referralCode.toUpperCase(), discount: '95折', referrerName: refData.ownerName };
+        }
+      }
+    }
+
     const orderId = `MC${++orderCounter}`;
-    const order = { id: orderId, serviceCode, serviceName: svcName, price: svcPrice, guarantee: svcGuarantee, gameId: gameId || '未填', contactId: contactId || '未填', airplane: airplane || '未指定', map: map || '不指定', note: note || '無', customerName: customerName || '網站老闆', status: 'pending', createdAt: new Date().toISOString(), booster: null, boosterId: null, acceptedAt: null, completedAt: null };
+    const order = { id: orderId, serviceCode, serviceName: svcName, price: svcPrice, guarantee: svcGuarantee, gameId: gameId || '未填', contactId: contactId || '未填', airplane: airplane || '未指定', map: map || '不指定', note: note || '無', customerName: customerName || '網站老闆', status: 'pending', createdAt: new Date().toISOString(), booster: null, boosterId: null, acceptedAt: null, completedAt: null, referralCode: referralApplied ? referralApplied.code : null };
     orders.set(orderId, order);
     const guild = client.guilds.cache.get(GUILD_ID);
     if (guild && channels.newOrders) {
@@ -887,8 +978,8 @@ app.post('/api/order', async (req, res) => {
         orderMessages.set(orderId, { newOrder: { channelId: ch.id, messageId: sentMsg.id } });
       }
     }
-    await sendTelegram(`🔔 新訂單 #${orderId}\n服務：${order.serviceName}\n金額：${order.price} T\n保底：${order.guarantee || '無'}\n遊戲ID：${order.gameId}\n聯繫：${order.contactId}`);
-    res.json({ success: true, orderId, message: `訂單 ${orderId} 已建立` });
+    await sendTelegram(`🔔 新訂單 #${orderId}\n服務：${order.serviceName}\n金額：${order.price} T\n保底：${order.guarantee || '無'}\n遊戲ID：${order.gameId}\n聯繫：${order.contactId}${referralApplied ? `\n🤝 推薦碼：${referralApplied.code}（推薦人：${referralApplied.referrerName}）` : ''}`);
+    res.json({ success: true, orderId, message: `訂單 ${orderId} 已建立`, referral: referralApplied });
   } catch (e) { console.error('訂單錯誤:', e); res.status(500).json({ error: '伺服器錯誤' }); }
 });
 
@@ -932,7 +1023,56 @@ app.get('/api/leaderboard', (req, res) => {
 });
 app.get('/api/tickets', (req, res) => { res.json([...tickets.values()].reverse().slice(0, 20)); });
 
+// ============================================================
+// 🤝 推薦系統 API
+// ============================================================
+
+app.post('/api/referral/create', (req, res) => {
+  const { contactId, name } = req.body;
+  if (!contactId) return res.status(400).json({ error: '請提供聯繫ID' });
+  if (referralByContact.has(contactId)) {
+    const code = referralByContact.get(contactId);
+    return res.json({ success: true, code, existing: true, data: referrals.get(code) });
+  }
+  const code = generateReferralCode(name || contactId);
+  const data = {
+    code, ownerId: contactId, ownerName: name || contactId,
+    referred: [], totalReferred: 0, milestone: null,
+    coupons: [], permDiscount: null, createdAt: new Date().toISOString(),
+  };
+  referrals.set(code, data);
+  referralByContact.set(contactId, code);
+  res.json({ success: true, code, existing: false, data });
+});
+
+app.get('/api/referral/:code', (req, res) => {
+  const data = referrals.get(req.params.code.toUpperCase());
+  if (!data) return res.status(404).json({ error: '找不到此推薦碼' });
+  const milestone = checkMilestone(data);
+  res.json({
+    code: data.code, ownerName: data.ownerName,
+    totalReferred: data.totalReferred,
+    currentMilestone: milestone ? milestone.name : '尚未達成',
+    nextMilestone: REFERRAL_MILESTONES.find(m => m.count > data.totalReferred) || null,
+    coupons: data.coupons, permDiscount: data.permDiscount,
+    referred: data.referred.map(r => ({ name: r.name, date: r.date, orderAmount: r.orderAmount })),
+  });
+});
+
+app.get('/api/referral-leaderboard', (req, res) => {
+  const sorted = [...referrals.values()]
+    .sort((a, b) => b.totalReferred - a.totalReferred)
+    .slice(0, 10)
+    .map((r, i) => ({
+      rank: i + 1, name: r.ownerName, referred: r.totalReferred,
+      milestone: checkMilestone(r)?.name || '無',
+    }));
+  res.json(sorted);
+});
+
+app.get('/api/referral-milestones', (req, res) => { res.json(REFERRAL_MILESTONES); });
+
 function getTimeDiff(start, end) { if (!start || !end) return '未知'; const diff = new Date(end) - new Date(start); const hours = Math.floor(diff / 3600000); const mins = Math.floor((diff % 3600000) / 60000); if (hours > 0) return `${hours}h ${mins}m`; return `${mins}m`; }
 
-app.listen(PORT, () => { console.log(`🌐 API v3.0 運行中：port ${PORT}`); });
+app.listen(PORT, () => { console.log(`🌐 API v3.1 運行中：port ${PORT}`); });
 client.login(DISCORD_TOKEN).catch(e => { console.error('Discord 登入失敗:', e.message); process.exit(1); });
