@@ -683,8 +683,8 @@ img { max-width: 100%; display: block; }
     <p class="section-subtitle fade-in">自家專業打手團隊</p>
     <div class="booster-grid fade-in">
       <div class="booster-card">
-        <div class="booster-avatar">🎯</div>
-        <div class="booster-name">Roger</div>
+        <div class="booster-avatar">🌙</div>
+        <div class="booster-name">午夜人</div>
         <div class="booster-title">創辦人 / 主教練</div>
         <div class="booster-stats">
           <div class="booster-stat"><div class="booster-stat-num">1200+</div><div class="booster-stat-label">完成單</div></div>
@@ -693,18 +693,28 @@ img { max-width: 100%; display: block; }
         <div class="booster-tags"><span class="booster-tag">護航王</span><span class="booster-tag">清圖專精</span><span class="booster-tag">對賭大師</span></div>
       </div>
       <div class="booster-card">
-        <div class="booster-avatar">🔥</div>
-        <div class="booster-name">阿K</div>
-        <div class="booster-title">王牌打手</div>
+        <div class="booster-avatar">🐒</div>
+        <div class="booster-name">1號猴</div>
+        <div class="booster-title">資深打手</div>
         <div class="booster-stats">
           <div class="booster-stat"><div class="booster-stat-num">800+</div><div class="booster-stat-label">完成單</div></div>
           <div class="booster-stat"><div class="booster-stat-num">99%</div><div class="booster-stat-label">好評率</div></div>
         </div>
         <div class="booster-tags"><span class="booster-tag">摸保險達人</span><span class="booster-tag">速通王</span></div>
       </div>
+      <div class="booster-card" style="border-color:rgba(251,191,36,0.4);">
+        <div class="booster-avatar" style="background:var(--gradient-gold);">🍬</div>
+        <div class="booster-name">CANDY</div>
+        <div class="booster-title" style="color:var(--accent-gold);">⭐ 金牌打手</div>
+        <div class="booster-stats">
+          <div class="booster-stat"><div class="booster-stat-num">900+</div><div class="booster-stat-label">完成單</div></div>
+          <div class="booster-stat"><div class="booster-stat-num">100%</div><div class="booster-stat-label">好評率</div></div>
+        </div>
+        <div class="booster-tags"><span class="booster-tag">護航專精</span><span class="booster-tag">特殊地圖</span><span class="booster-tag">金牌認證</span></div>
+      </div>
       <div class="booster-card">
-        <div class="booster-avatar">💎</div>
-        <div class="booster-name">小白</div>
+        <div class="booster-avatar">🎮</div>
+        <div class="booster-name">NICK</div>
         <div class="booster-title">全能打手</div>
         <div class="booster-stats">
           <div class="booster-stat"><div class="booster-stat-num">600+</div><div class="booster-stat-label">完成單</div></div>
@@ -712,15 +722,25 @@ img { max-width: 100%; display: block; }
         </div>
         <div class="booster-tags"><span class="booster-tag">代肝專家</span><span class="booster-tag">陪玩高手</span></div>
       </div>
-      <div class="booster-card">
-        <div class="booster-avatar">⚡</div>
-        <div class="booster-name">雷神</div>
-        <div class="booster-title">特殊地圖專家</div>
+      <div class="booster-card" style="border-color:rgba(251,191,36,0.4);">
+        <div class="booster-avatar" style="background:var(--gradient-gold);">🐕</div>
+        <div class="booster-name">狗一波</div>
+        <div class="booster-title" style="color:var(--accent-gold);">⭐ 金牌打手</div>
         <div class="booster-stats">
-          <div class="booster-stat"><div class="booster-stat-num">400+</div><div class="booster-stat-label">完成單</div></div>
+          <div class="booster-stat"><div class="booster-stat-num">850+</div><div class="booster-stat-label">完成單</div></div>
           <div class="booster-stat"><div class="booster-stat-num">100%</div><div class="booster-stat-label">好評率</div></div>
         </div>
-        <div class="booster-tags"><span class="booster-tag">機密文件</span><span class="booster-tag">理想國</span><span class="booster-tag">大金獵手</span></div>
+        <div class="booster-tags"><span class="booster-tag">對賭大師</span><span class="booster-tag">大金獵手</span><span class="booster-tag">金牌認證</span></div>
+      </div>
+      <div class="booster-card">
+        <div class="booster-avatar">💨</div>
+        <div class="booster-name">溜溜</div>
+        <div class="booster-title">機動打手</div>
+        <div class="booster-stats">
+          <div class="booster-stat"><div class="booster-stat-num">500+</div><div class="booster-stat-label">完成單</div></div>
+          <div class="booster-stat"><div class="booster-stat-num">99%</div><div class="booster-stat-label">好評率</div></div>
+        </div>
+        <div class="booster-tags"><span class="booster-tag">清圖快手</span><span class="booster-tag">任務救急</span></div>
       </div>
     </div>
   </div>
@@ -1161,7 +1181,6 @@ document.querySelectorAll('.pricing-tab').forEach(tab => {
 // SELECT SERVICE (from pricing cards)
 // ═══════════════════════════════════════════
 function selectService(code) {
-  }
   document.getElementById('serviceSelect').value = code;
   updatePreview();
   document.getElementById('order').scrollIntoView({ behavior: 'smooth' });
