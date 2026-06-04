@@ -85,9 +85,10 @@ const SERVICES = {
   'I-3': { name: '摸保險 100個', price: 7000, guarantee: '8,000萬', cat: '摸保險' },
   'G-1': { name: '單局單大金', price: 550, guarantee: null, cat: '對賭' },
   'G-2': { name: '單局帶出1500萬', price: 6888, guarantee: '3,888萬', cat: '對賭' },
-  'G-3': { name: '指定任意大金', price: 5400, guarantee: null, cat: '對賭' },
+  'G-3': { name: '指定任意大金（不含理想國/機密）', price: 5400, guarantee: null, cat: '對賭' },
   'S-1': { name: '機密文件', price: 4100, guarantee: '6,888萬', cat: '特殊地圖' },
   'S-2': { name: '理想國', price: 2680, guarantee: '3,999萬', cat: '特殊地圖' },
+  'S-3': { name: '機密文件單', price: 4000, guarantee: '7,000萬', cat: '特殊地圖' },
   'A-1': { name: 'S5 3x3代肝', price: 2800, guarantee: null, cat: '代肝' },
   'A-2': { name: '單日代肝8H', price: 1200, guarantee: null, cat: '代肝' },
   'A-3': { name: '週套餐代肝', price: 7500, guarantee: null, cat: '代肝' },
@@ -1073,6 +1074,7 @@ app.get('/api/referral-leaderboard', (req, res) => {
 app.get('/api/referral-milestones', (req, res) => { res.json(REFERRAL_MILESTONES); });
 
 function getTimeDiff(start, end) { if (!start || !end) return '未知'; const diff = new Date(end) - new Date(start); const hours = Math.floor(diff / 3600000); const mins = Math.floor((diff % 3600000) / 60000); if (hours > 0) return `${hours}h ${mins}m`; return `${mins}m`; }
+
 
 app.listen(PORT, () => { console.log(`🌐 API v3.1 運行中：port ${PORT}`); });
 client.login(DISCORD_TOKEN).catch(e => { console.error('Discord 登入失敗:', e.message); process.exit(1); });
