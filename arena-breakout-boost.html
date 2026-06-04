@@ -416,6 +416,9 @@ img { max-width: 100%; display: block; }
   <div class="loader-logo">MIDNIGHT CLUB</div>
   <div class="loader-bar"><div class="loader-bar-inner"></div></div>
 </div>
+<script>
+(function(){var t=setTimeout(function(){document.getElementById("loader").classList.add("hide")},3000);window.addEventListener("load",function(){clearTimeout(t);setTimeout(function(){document.getElementById("loader").classList.add("hide")},1800)})})();
+</script>
 
 <!-- PARTICLES -->
 <canvas id="particles"></canvas>
@@ -627,9 +630,9 @@ img { max-width: 100%; display: block; }
       <div class="price-grid">
         <div class="price-card hot"><div class="price-card-code">S-1</div><div class="price-card-name">機密文件</div><div class="price-card-price">4,100 <span>T</span></div><div class="price-card-guarantee"><i class="fas fa-shield-halved"></i> 保底 6,888萬</div><button class="price-card-btn" onclick="selectService('S-1')">選擇此服務</button></div>
         <div class="price-card hot"><div class="price-card-code">S-2</div><div class="price-card-name">理想國</div><div class="price-card-price">2,680 <span>T</span></div><div class="price-card-guarantee"><i class="fas fa-shield-halved"></i> 保底 3,999萬</div><button class="price-card-btn" onclick="selectService('S-2')">選擇此服務</button></div>
-        <div class="price-card"><div class="price-card-code">S-3</div><div class="price-card-name">機密文件單</div><div class="price-card-price">4,000 <span>T</span></div><div class="price-card-guarantee"><i class="fas fa-shield-halved"></i> 保底 7,000萬</div><button class="price-card-btn" onclick="selectService('S-3')">選擇此服務</button></div>
       </div>
     </div>
+        <div class="price-card"><div class="price-card-code">S-3</div><div class="price-card-name">機密文件單</div><div class="price-card-price">4,000 <span>T</span></div><div class="price-card-guarantee"><i class="fas fa-shield-halved"></i> 保底 7,000萬</div><button class="price-card-btn" onclick="selectService('S-3')">選擇此服務</button></div>
 
     <div class="pricing-panel" data-panel="grind">
       <div class="price-grid">
@@ -645,7 +648,7 @@ img { max-width: 100%; display: block; }
         <div class="price-card"><div class="price-card-code">P-2</div><div class="price-card-name">娛樂女陪</div><div class="price-card-price">400 <span>T/H</span></div><button class="price-card-btn" onclick="selectService('P-2')">選擇此服務</button></div>
         <div class="price-card hot"><div class="price-card-code">P-5</div><div class="price-card-name">技術女陪</div><div class="price-card-price">600 <span>T/H</span></div><button class="price-card-btn" onclick="selectService('P-5')">選擇此服務</button></div>
         <div class="price-card"><div class="price-card-code">P-6</div><div class="price-card-name">TW女陪</div><div class="price-card-price">450 <span>T/H</span></div><button class="price-card-btn" onclick="selectService('P-6')">選擇此服務</button></div>
-        <div class="price-card"><div class="price-card-code">P-3</div><div class="price-card-name">長時陪做套餐</div><div class="price-card-price">3,688 <span>T</span></div><p style="margin-top:8px;font-size:0.85rem;color:var(--text-secondary);">10H + 60任務</p><button class="price-card-btn" onclick="selectService('P-3')">選擇此服務</button></div>
+        <div class="price-card hot"><div class="price-card-code">P-3</div><div class="price-card-name">長時陪做套餐</div><div class="price-card-price">3,688 <span>T</span></div><p style="margin-top:8px;font-size:0.85rem;color:var(--text-secondary);">10H + 60任務</p><button class="price-card-btn" onclick="selectService('P-3')">選擇此服務</button></div>
         <div class="price-card"><div class="price-card-code">P-4</div><div class="price-card-name">任務救急</div><div class="price-card-price">260 <span>T</span></div><button class="price-card-btn" onclick="selectService('P-4')">選擇此服務</button></div>
       </div>
     </div>
@@ -1104,11 +1107,7 @@ const API_URL = 'https://midnight-club-bot-production.up.railway.app';
 // ═══════════════════════════════════════════
 // LOADER
 // ═══════════════════════════════════════════
-function hideLoader() {
-  setTimeout(() => { document.getElementById('loader').classList.add('hide'); }, 1800);
-}
-if (document.readyState === 'complete') { hideLoader(); }
-else { window.addEventListener('load', hideLoader); }
+// Loader 由頂部獨立 script 處理
 
 // ═══════════════════════════════════════════
 // PARTICLES
