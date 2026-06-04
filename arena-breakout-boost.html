@@ -1104,9 +1104,11 @@ const API_URL = 'https://midnight-club-bot-production.up.railway.app';
 // ═══════════════════════════════════════════
 // LOADER
 // ═══════════════════════════════════════════
-window.addEventListener('load', () => {
+function hideLoader() {
   setTimeout(() => { document.getElementById('loader').classList.add('hide'); }, 1800);
-});
+}
+if (document.readyState === 'complete') { hideLoader(); }
+else { window.addEventListener('load', hideLoader); }
 
 // ═══════════════════════════════════════════
 // PARTICLES
