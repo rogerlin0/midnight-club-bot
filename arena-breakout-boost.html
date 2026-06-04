@@ -619,7 +619,7 @@ img { max-width: 100%; display: block; }
       <div class="price-grid">
         <div class="price-card"><div class="price-card-code">G-1</div><div class="price-card-name">單局單大金</div><div class="price-card-price">550 <span>T</span></div><button class="price-card-btn" onclick="selectService('G-1')">選擇此服務</button></div>
         <div class="price-card hot"><div class="price-card-code">G-2</div><div class="price-card-name">單局帶出1500萬</div><div class="price-card-price">6,888 <span>T</span></div><div class="price-card-guarantee"><i class="fas fa-shield-halved"></i> 保底 3,888萬</div><button class="price-card-btn" onclick="selectService('G-2')">選擇此服務</button></div>
-        <div class="price-card"><div class="price-card-code">G-3</div><div class="price-card-name">指定任意大金</div><div class="price-card-price">5,400 <span>T</span></div><button class="price-card-btn" onclick="selectService('G-3')">選擇此服務</button></div>
+        <div class="price-card"><div class="price-card-code">G-3</div><div class="price-card-name">指定任意大金</div><p style="margin:4px 0 0;font-size:0.75rem;color:#f87171;">不含理想國/機密</p><div class="price-card-price">5,400 <span>T</span></div><button class="price-card-btn" onclick="selectService('G-3')">選擇此服務</button></div>
       </div>
     </div>
 
@@ -627,6 +627,7 @@ img { max-width: 100%; display: block; }
       <div class="price-grid">
         <div class="price-card hot"><div class="price-card-code">S-1</div><div class="price-card-name">機密文件</div><div class="price-card-price">4,100 <span>T</span></div><div class="price-card-guarantee"><i class="fas fa-shield-halved"></i> 保底 6,888萬</div><button class="price-card-btn" onclick="selectService('S-1')">選擇此服務</button></div>
         <div class="price-card hot"><div class="price-card-code">S-2</div><div class="price-card-name">理想國</div><div class="price-card-price">2,680 <span>T</span></div><div class="price-card-guarantee"><i class="fas fa-shield-halved"></i> 保底 3,999萬</div><button class="price-card-btn" onclick="selectService('S-2')">選擇此服務</button></div>
+        <div class="price-card"><div class="price-card-code">S-3</div><div class="price-card-name">機密文件單</div><div class="price-card-price">4,000 <span>T</span></div><div class="price-card-guarantee"><i class="fas fa-shield-halved"></i> 保底 7,000萬</div><button class="price-card-btn" onclick="selectService('S-3')">選擇此服務</button></div>
       </div>
     </div>
 
@@ -828,11 +829,12 @@ img { max-width: 100%; display: block; }
             <optgroup label="💰 對賭">
               <option value="G-1">G-1 單局單大金 — 550T</option>
               <option value="G-2">G-2 帶出1500萬 — 6,888T 🔥</option>
-              <option value="G-3">G-3 指定大金 — 5,400T</option>
+              <option value="G-3">G-3 指定大金（不含理想國/機密） — 5,400T</option>
             </optgroup>
             <optgroup label="🗺️ 特殊地圖">
               <option value="S-1">S-1 機密文件 — 4,100T 🔥</option>
               <option value="S-2">S-2 理想國 — 2,680T 🔥</option>
+              <option value="S-3">S-3 機密文件單 — 4,000T（保底7,000萬）</option>
             </optgroup>
             <optgroup label="🧬 代肝">
               <option value="A-1">A-1 3x3代肝 — 2,800T 🔥</option>
@@ -1023,8 +1025,8 @@ const SERVICES = {
   'I-1':{name:'摸保險10個',price:800,guarantee:'1,000萬'},'I-2':{name:'摸保險50個',price:4000,guarantee:'4,500萬'},
   'I-3':{name:'摸保險100個',price:7000,guarantee:'8,000萬'},
   'G-1':{name:'單局單大金',price:550,guarantee:null},'G-2':{name:'單局帶出1500萬',price:6888,guarantee:'3,888萬'},
-  'G-3':{name:'指定任意大金',price:5400,guarantee:null},
-  'S-1':{name:'機密文件',price:4100,guarantee:'6,888萬'},'S-2':{name:'理想國',price:2680,guarantee:'3,999萬'},
+  'G-3':{name:'指定任意大金（不含理想國/機密）',price:5400,guarantee:null},
+  'S-1':{name:'機密文件',price:4100,guarantee:'6,888萬'},'S-2':{name:'理想國',price:2680,guarantee:'3,999萬'},'S-3':{name:'機密文件單',price:4000,guarantee:'7,000萬'},
   'A-1':{name:'S5 3x3代肝',price:2800,guarantee:null},'A-2':{name:'單日代肝8H',price:1200,guarantee:null},
   'A-3':{name:'週套餐代肝',price:7500,guarantee:null},
   'P-1':{name:'技術男陪/H',price:350,guarantee:null},'P-2':{name:'娛樂女陪/H',price:400,guarantee:null},'P-5':{name:'技術女陪/H',price:600,guarantee:null},'P-6':{name:'TW女陪/H',price:450,guarantee:null},
