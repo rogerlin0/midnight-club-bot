@@ -451,35 +451,17 @@ async function syncPricesToDiscord(guild) {
 }
 
 // ============================================================
-// 自動建立頻道與角色
+// 自動建立頻道與角色（v3.1 六區架構）
+// ============================================================
+// 📋 資訊公告（唯讀）  — 歡迎、公告、報價表、好評曬單
+// 💬 暗區社群（公開）  — 閒聊、攻略、戰績、組隊
+// 🎮 客戶專區（客戶+） — 老闆大廳、訂單查詢、VIP包廂
+// 🛡️ 接單系統（打手+Boss）— 新訂單、進行中、已完成
+// 🔒 內部管理（打手+Boss）— 打手聊天、報表、管理日誌
+// 🔊 語音頻道 — 公開 / 客戶限定 / 代練作業 / VIP
 // ============================================================
 async function setupChannels(guild) {
-  const categoryDefs = [
-    { key: 'catPublic', name: '🎮 暗區社群（公開）' },
-    { key: 'catVoice', name: '🔊 語音頻道' },
-    { key: 'catBusiness', name: '🌙 午夜俱樂部（接單）' },
-    { key: 'catInternal', name: '🔒 內部管理' },
-  ];
-  const channelDefs = [
-    { key: 'welcome', name: '👋｜歡迎光臨', cat: 'catPublic' },
-    { key: 'announcements', name: '📢｜公告', cat: 'catPublic' },
-    { key: 'chat', name: '💬｜閒聊吹水', cat: 'catPublic' },
-    { key: 'gameChat', name: '🔫｜暗區攻略', cat: 'catPublic' },
-    { key: 'showoff', name: '🏆｜戰績曬單', cat: 'catPublic' },
-    { key: 'priceList', name: '💰｜報價表', cat: 'catPublic' },
-    { key: 'reviews', name: '⭐｜好評曬單', cat: 'catPublic' },
-    { key: 'vcLobby', name: '🔊｜大廳聊天', cat: 'catVoice', voice: true },
-    { key: 'vcTeam1', name: '🎯｜組隊 1', cat: 'catVoice', voice: true },
-    { key: 'vcTeam2', name: '🎯｜組隊 2', cat: 'catVoice', voice: true },
-    { key: 'newOrders', name: '🔔｜新訂單', cat: 'catBusiness' },
-    { key: 'activeOrders', name: '⚡｜進行中', cat: 'catBusiness' },
-    { key: 'completed', name: '✅｜已完成', cat: 'catBusiness' },
-    { key: 'customerLobby', name: '🎮｜老闆大廳', cat: 'catBusiness' },
-    { key: 'vipLounge', name: '👑｜VIP專區', cat: 'catBusiness' },
-    { key: 'boosterChat', name: '💬｜打手聊天', cat: 'catInternal' },
-    { key: 'dailyStats', name: '📊｜每日報表', cat: 'catInternal' },
-    { key: 'adminLog', name: '📋｜管理日誌', cat: 'catInternal' },
-  ];
+  // ── 建立角色 ──
   const roleDefs = [
     { name: 'Boss', color: 0xf43f5e, hoist: true },
     { name: 'Booster', color: 0xfbbf24, hoist: true },
@@ -489,34 +471,160 @@ async function setupChannels(guild) {
   for (const rd of roleDefs) {
     if (!guild.roles.cache.find(r => r.name === rd.name)) {
       await guild.roles.create({ name: rd.name, color: rd.color, hoist: rd.hoist, reason: 'MK-01' });
+      console.log(`✅ 已建立角色：${rd.name}`);
     }
   }
+
+  // ── 取得角色參考 ──
+  const bossRole = guild.roles.cache.find(r => r.name === 'Boss');
+  const boosterRole = guild.roles.cache.find(r => r.name === 'Booster');
+  const vipRole = guild.roles.cache.find(r => r.name === 'VIP客戶');
+  const clientRole = guild.roles.cache.find(r => r.name === '客戶');
+
+  // ── 常用權限組合 ──
+  const permStaffOnly = [
+    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+    ...(boosterRole ? [{ id: boosterRole.id, allow: [PermissionFlagsBits.ViewChannel] }] : []),
+    ...(bossRole ? [{ id: bossRole.id, allow: [PermissionFlagsBits.ViewChannel] }] : []),
+  ];
+  const permClientUp = [
+    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+    ...(clientRole ? [{ id: clientRole.id, allow: [PermissionFlagsBits.ViewChannel] }] : []),
+    ...(vipRole ? [{ id: vipRole.id, allow: [PermissionFlagsBits.ViewChannel] }] : []),
+    ...(boosterRole ? [{ id: boosterRole.id, allow: [PermissionFlagsBits.ViewChannel] }] : []),
+    ...(bossRole ? [{ id: bossRole.id, allow: [PermissionFlagsBits.ViewChannel] }] : []),
+  ];
+  const permVipUp = [
+    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+    ...(vipRole ? [{ id: vipRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }] : []),
+    ...(boosterRole ? [{ id: boosterRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }] : []),
+    ...(bossRole ? [{ id: bossRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }] : []),
+  ];
+  const permClientVoice = [
+    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+    ...(clientRole ? [{ id: clientRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }] : []),
+    ...(vipRole ? [{ id: vipRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }] : []),
+    ...(boosterRole ? [{ id: boosterRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }] : []),
+    ...(bossRole ? [{ id: bossRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }] : []),
+  ];
+  const permStaffVoice = [
+    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+    ...(boosterRole ? [{ id: boosterRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }] : []),
+    ...(bossRole ? [{ id: bossRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }] : []),
+  ];
+
+  // ── 六大分類 ──
+  const categoryDefs = [
+    {
+      key: 'catInfo', name: '📋 資訊公告',
+      perms: [
+        { id: guild.id, deny: [PermissionFlagsBits.SendMessages] },
+        ...(bossRole ? [{ id: bossRole.id, allow: [PermissionFlagsBits.SendMessages] }] : []),
+        ...(boosterRole ? [{ id: boosterRole.id, allow: [PermissionFlagsBits.SendMessages] }] : []),
+      ]
+    },
+    { key: 'catCommunity', name: '💬 暗區社群' },
+    { key: 'catCustomer', name: '🎮 客戶專區', perms: permClientUp },
+    { key: 'catOrders', name: '🛡️ 接單系統', perms: permStaffOnly },
+    { key: 'catInternal', name: '🔒 內部管理', perms: permStaffOnly },
+    { key: 'catVoice', name: '🔊 語音頻道' },
+  ];
+
+  // ── 頻道定義 ──
+  const channelDefs = [
+    // ─── 📋 資訊公告（唯讀，僅 Boss/Booster 可發言） ───
+    { key: 'welcome', name: '👋｜歡迎光臨', cat: 'catInfo' },
+    { key: 'announcements', name: '📢｜公告', cat: 'catInfo' },
+    { key: 'priceList', name: '💰｜報價表', cat: 'catInfo' },
+    { key: 'reviews', name: '⭐｜好評曬單', cat: 'catInfo' },
+
+    // ─── 💬 暗區社群（公開互動） ───
+    { key: 'chat', name: '💬｜閒聊吹水', cat: 'catCommunity' },
+    { key: 'gameChat', name: '🔫｜暗區攻略', cat: 'catCommunity' },
+    { key: 'showoff', name: '🏆｜戰績曬單', cat: 'catCommunity' },
+    { key: 'lfg', name: '🎯｜組隊找人', cat: 'catCommunity' },
+
+    // ─── 🎮 客戶專區（需客戶角色以上） ───
+    { key: 'customerLobby', name: '🎮｜老闆大廳', cat: 'catCustomer' },
+    { key: 'customerOrders', name: '📋｜訂單查詢', cat: 'catCustomer' },
+    { key: 'vipLounge', name: '👑｜VIP包廂', cat: 'catCustomer', perms: permVipUp },
+
+    // ─── 🛡️ 接單系統（僅打手 + Boss 可見） ───
+    { key: 'newOrders', name: '🔔｜新訂單', cat: 'catOrders' },
+    { key: 'activeOrders', name: '⚡｜進行中', cat: 'catOrders' },
+    { key: 'completed', name: '✅｜已完成', cat: 'catOrders' },
+
+    // ─── 🔒 內部管理（僅打手 + Boss 可見） ───
+    { key: 'boosterChat', name: '💬｜打手聊天', cat: 'catInternal' },
+    { key: 'dailyStats', name: '📊｜每日報表', cat: 'catInternal' },
+    { key: 'adminLog', name: '📋｜管理日誌', cat: 'catInternal' },
+
+    // ─── 🔊 語音頻道（分層權限） ───
+    // 公開 — 所有人可進
+    { key: 'vcLobby', name: '🔊｜大廳聊天', cat: 'catVoice', voice: true },
+    { key: 'vcTeam1', name: '🎯｜組隊 1', cat: 'catVoice', voice: true, userLimit: 5 },
+    { key: 'vcTeam2', name: '🎯｜組隊 2', cat: 'catVoice', voice: true, userLimit: 5 },
+    // 客戶限定 — 需客戶角色
+    { key: 'vcBoss1', name: '🎮｜老闆開黑 1', cat: 'catVoice', voice: true, userLimit: 5, perms: permClientVoice },
+    { key: 'vcBoss2', name: '🎮｜老闆開黑 2', cat: 'catVoice', voice: true, userLimit: 5, perms: permClientVoice },
+    // 代練作業 — 僅打手 + Boss
+    { key: 'vcBoost1', name: '🛡️｜代練作業 1', cat: 'catVoice', voice: true, userLimit: 5, perms: permStaffVoice },
+    { key: 'vcBoost2', name: '🛡️｜代練作業 2', cat: 'catVoice', voice: true, userLimit: 5, perms: permStaffVoice },
+    // VIP — 僅 VIP + 打手 + Boss
+    { key: 'vcVip1', name: '👑｜VIP 包廂 1', cat: 'catVoice', voice: true, perms: permVipUp },
+    { key: 'vcVip2', name: '👑｜VIP 包廂 2', cat: 'catVoice', voice: true, perms: permVipUp },
+  ];
+
+  // ── 建立 / 更新分類 ──
   const categories = {};
   for (const catDef of categoryDefs) {
     let cat = guild.channels.cache.find(c => c.name === catDef.name && c.type === ChannelType.GuildCategory);
     if (!cat) {
-      const perms = [];
-      if (catDef.key === 'catInternal') {
-        perms.push({ id: guild.id, deny: [PermissionFlagsBits.ViewChannel] });
-        const br = guild.roles.cache.find(r => r.name === 'Booster');
-        const bo = guild.roles.cache.find(r => r.name === 'Boss');
-        if (br) perms.push({ id: br.id, allow: [PermissionFlagsBits.ViewChannel] });
-        if (bo) perms.push({ id: bo.id, allow: [PermissionFlagsBits.ViewChannel] });
-      }
-      cat = await guild.channels.create({ name: catDef.name, type: ChannelType.GuildCategory, permissionOverwrites: perms.length ? perms : undefined, reason: 'MK-01' });
+      cat = await guild.channels.create({
+        name: catDef.name,
+        type: ChannelType.GuildCategory,
+        permissionOverwrites: catDef.perms || undefined,
+        reason: 'MK-01 v3.1 頻道重組'
+      });
+      console.log(`✅ 已建立分類：${catDef.name}`);
+    } else if (catDef.perms) {
+      // 既有分類 → 同步權限
+      await cat.permissionOverwrites.set(catDef.perms, 'MK-01 v3.1 權限同步').catch(() => {});
     }
     categories[catDef.key] = cat.id;
   }
+
+  // ── 建立 / 更新頻道 ──
   for (const cd of channelDefs) {
     const parentId = categories[cd.cat];
     const chType = cd.voice ? ChannelType.GuildVoice : ChannelType.GuildText;
-    let ch = guild.channels.cache.find(c => c.name === cd.name && c.parentId === parentId) || guild.channels.cache.find(c => c.name === cd.name);
+    let ch = guild.channels.cache.find(c => c.name === cd.name && c.parentId === parentId)
+          || guild.channels.cache.find(c => c.name === cd.name);
+
     if (!ch) {
-      ch = await guild.channels.create({ name: cd.name, type: chType, parent: parentId, reason: 'MK-01' });
+      const opts = {
+        name: cd.name,
+        type: chType,
+        parent: parentId,
+        permissionOverwrites: cd.perms || undefined,
+        reason: 'MK-01 v3.1 頻道重組'
+      };
+      if (cd.voice && cd.userLimit) opts.userLimit = cd.userLimit;
+      ch = await guild.channels.create(opts);
+      console.log(`✅ 已建立${cd.voice ? '語音' : '文字'}頻道：${cd.name}`);
+    } else {
+      // 既有頻道 → 同步歸屬與權限
+      if (ch.parentId !== parentId) {
+        await ch.setParent(parentId, { lockPermissions: false, reason: 'MK-01 v3.1 歸類調整' }).catch(() => {});
+      }
+      if (cd.perms) {
+        await ch.permissionOverwrites.set(cd.perms, 'MK-01 v3.1 權限同步').catch(() => {});
+      }
     }
     channels[cd.key] = ch.id;
   }
-  console.log('🌙 頻道設定完成');
+
+  console.log('🌙 頻道設定完成（v3.1 六區架構 · 分層權限）');
 }
 
 // ============================================================
