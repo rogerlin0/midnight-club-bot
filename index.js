@@ -12,33 +12,158 @@ const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder,
 const express = require('express');
 const cron = require('node-cron');
 const fetch = require('node-fetch');
+const mongoose = require('mongoose');
 
 // ── 環境變數 ──
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
 const TG_TOKEN = process.env.TELEGRAM_TOKEN;
 const TG_CHAT = process.env.TELEGRAM_CHAT_ID;
+const MONGO_URI = process.env.MONGO_URI;
 const PORT = process.env.PORT || 3000;
 
-// ── 資料庫（記憶體，正式版接 MongoDB） ──
+// ══════════════════════════════════════════
+// MongoDB Schemas
+// ══════════════════════════════════════════
+const orderSchema = new mongoose.Schema({
+  id: { type: String, unique: true, index: true },
+  serviceCode: String, serviceName: String, price: Number,
+  originalPrice: Number, guarantee: String,
+  quantity: { type: Number, default: 1 },
+  paidQuantity: { type: Number, default: 1 },
+  freeQuantity: { type: Number, default: 0 },
+  gameId: String, contactId: String, airplane: String,
+  map: String, note: String, customerName: String,
+  status: { type: String, default: 'pending', index: true },
+  booster: String, boosterId: String,
+  acceptedAt: String, completedAt: String, createdAt: String,
+  referralCode: String,
+  vipTier: String, vipDiscount: Number,
+});
+
+const vipSchema = new mongoose.Schema({
+  contactId: { type: String, unique: true, index: true },
+  name: String, totalSpent: { type: Number, default: 0 },
+  orders: [{ id: String, service: String, price: Number, date: String }],
+});
+
+const boosterSchema = new mongoose.Schema({
+  tag: { type: String, unique: true, index: true },
+  completed: { type: Number, default: 0 },
+  revenue: { type: Number, default: 0 },
+  name: String,
+});
+
+const ticketSchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  userId: String, userTag: String, description: String,
+  status: { type: String, default: 'open' },
+  createdAt: String, responses: Array,
+});
+
+const counterSchema = new mongoose.Schema({
+  key: { type: String, unique: true },
+  value: { type: Number, default: 0 },
+});
+
+const referralSchema = new mongoose.Schema({
+  code: { type: String, unique: true, index: true },
+  ownerId: String, ownerName: String,
+  referred: [{ contactId: String, name: String, date: String, orderAmount: Number }],
+  totalReferred: { type: Number, default: 0 },
+  milestone: Object, coupons: Array, permDiscount: Number,
+  createdAt: String,
+});
+
+let Order, Vip, Booster, Ticket, Counter, Referral;
+let mongoReady = false;
+
+// ── 記憶體 fallback（MongoDB 連不上時使用） ──
 const orders = new Map();
 const orderMessages = new Map();
 let orderCounter = 1000;
 const dailyStats = { revenue: 0, count: 0, services: {} };
-
-// ── VIP 客戶資料庫 ──
-const vipData = new Map(); // key: contactId, value: { totalSpent, tier, orders:[], name }
-
-// ── 打手排行榜資料 ──
-const boosterStats = new Map(); // key: odiscord usertag, value: { completed, revenue, name }
-
-// ── 工單資料庫 ──
+const vipData = new Map();
+const boosterStats = new Map();
 const tickets = new Map();
 let ticketCounter = 0;
+const referrals = new Map();
+const referralByContact = new Map();
 
-// ── 推薦系統資料庫 ──
-const referrals = new Map(); // key: referralCode, value: { ownerId, ownerName, referred:[], totalReferred, milestone, coupons:[] }
-const referralByContact = new Map(); // key: contactId → referralCode (反查)
+// ── MongoDB 連線 ──
+async function connectMongo() {
+  if (!MONGO_URI) { console.log('⚠️ 未設定 MONGO_URI，使用記憶體模式'); return; }
+  try {
+    await mongoose.connect(MONGO_URI);
+    Order = mongoose.model('Order', orderSchema);
+    Vip = mongoose.model('Vip', vipSchema);
+    Booster = mongoose.model('Booster', boosterSchema);
+    Ticket = mongoose.model('Ticket', ticketSchema);
+    Counter = mongoose.model('Counter', counterSchema);
+    Referral = mongoose.model('Referral', referralSchema);
+
+    // 載入 counter
+    const oc = await Counter.findOne({ key: 'order' });
+    if (oc) orderCounter = oc.value;
+    const tc = await Counter.findOne({ key: 'ticket' });
+    if (tc) ticketCounter = tc.value;
+
+    // 載入現有資料到記憶體快取（Discord bot 需要）
+    const allOrders = await Order.find({});
+    allOrders.forEach(o => orders.set(o.id, o.toObject()));
+    const allVip = await Vip.find({});
+    allVip.forEach(v => vipData.set(v.contactId, v.toObject()));
+    const allBoosters = await Booster.find({});
+    allBoosters.forEach(b => boosterStats.set(b.tag, { completed: b.completed, revenue: b.revenue, name: b.name }));
+    const allTickets = await Ticket.find({});
+    allTickets.forEach(t => tickets.set(t.id, t.toObject()));
+    const allReferrals = await Referral.find({});
+    allReferrals.forEach(r => {
+      referrals.set(r.code, r.toObject());
+      referralByContact.set(r.ownerId, r.code);
+    });
+
+    mongoReady = true;
+    console.log(`✅ MongoDB 已連線 — 載入 ${allOrders.length} 訂單, ${allVip.length} VIP, ${allBoosters.length} 打手`);
+  } catch (e) {
+    console.error('❌ MongoDB 連線失敗，使用記憶體模式:', e.message);
+  }
+}
+
+// ── DB 寫入工具（同時寫記憶體 + MongoDB） ──
+async function dbSaveOrder(order) {
+  orders.set(order.id, order);
+  if (mongoReady) {
+    await Order.findOneAndUpdate({ id: order.id }, order, { upsert: true }).catch(e => console.error('DB save order err:', e.message));
+    await Counter.findOneAndUpdate({ key: 'order' }, { value: orderCounter }, { upsert: true }).catch(() => {});
+  }
+}
+async function dbSaveVip(contactId, data) {
+  vipData.set(contactId, data);
+  if (mongoReady) {
+    await Vip.findOneAndUpdate({ contactId }, data, { upsert: true }).catch(e => console.error('DB save vip err:', e.message));
+  }
+}
+async function dbSaveBooster(tag, data) {
+  boosterStats.set(tag, data);
+  if (mongoReady) {
+    await Booster.findOneAndUpdate({ tag }, { ...data, tag }, { upsert: true }).catch(e => console.error('DB save booster err:', e.message));
+  }
+}
+async function dbSaveTicket(ticket) {
+  tickets.set(ticket.id, ticket);
+  if (mongoReady) {
+    await Ticket.findOneAndUpdate({ id: ticket.id }, ticket, { upsert: true }).catch(e => console.error('DB save ticket err:', e.message));
+    await Counter.findOneAndUpdate({ key: 'ticket' }, { value: ticketCounter }, { upsert: true }).catch(() => {});
+  }
+}
+async function dbSaveReferral(code, data) {
+  referrals.set(code, data);
+  referralByContact.set(data.ownerId, code);
+  if (mongoReady) {
+    await Referral.findOneAndUpdate({ code }, data, { upsert: true }).catch(e => console.error('DB save referral err:', e.message));
+  }
+}
 
 // ── 推薦里程碑定義 ──
 const REFERRAL_MILESTONES = [
@@ -69,6 +194,7 @@ const channels = {};
 
 // ── 服務報價表 ──
 const SERVICES = {
+  'E-0': { name: '護航⓪', price: 400, guarantee: '550萬', cat: '護航' },
   'E-1': { name: '護航①', price: 750, guarantee: '1,388萬', cat: '護航' },
   'E-2': { name: '護航②', price: 1200, guarantee: '2,588萬', cat: '護航' },
   'E-3': { name: '護航③', price: 1700, guarantee: '3,788萬', cat: '護航' },
@@ -281,7 +407,7 @@ client.on('messageCreate', async (msg) => {
       createdAt: new Date().toISOString(),
       responses: [],
     };
-    tickets.set(ticketId, ticket);
+    await dbSaveTicket(ticket);
 
     const embed = new EmbedBuilder()
       .setColor(0xf43f5e)
@@ -341,6 +467,7 @@ client.on('interactionCreate', async interaction => {
     const ticket = tickets.get(id);
     if (!ticket) return interaction.reply({ content: '找不到此工單', ephemeral: true });
     ticket.status = action === 'tkresolve' ? 'resolved' : 'closed';
+    await dbSaveTicket(ticket);
     const statusText = action === 'tkresolve' ? '✅ 已解決' : '❌ 已關閉';
     await interaction.update({
       embeds: [
@@ -360,6 +487,7 @@ client.on('interactionCreate', async interaction => {
   if (action === 'accept') {
     if (order.status !== 'pending') return interaction.reply({ content: '⚠️ 此訂單已被其他打手接走', ephemeral: true });
     order.status = 'active'; order.booster = interaction.user.tag; order.boosterId = interaction.user.id; order.acceptedAt = new Date().toISOString();
+    await dbSaveOrder(order);
     await interaction.deferUpdate();
     try { await interaction.message.delete(); } catch(e) {}
     if (channels.activeOrders) {
@@ -380,6 +508,7 @@ client.on('interactionCreate', async interaction => {
   if (action === 'done') {
     if (order.boosterId !== interaction.user.id) return interaction.reply({ content: '❌ 只有接單打手可以完成此訂單', ephemeral: true });
     order.status = 'completed'; order.completedAt = new Date().toISOString();
+    await dbSaveOrder(order);
     dailyStats.revenue += order.price; dailyStats.count += 1; dailyStats.services[order.serviceCode] = (dailyStats.services[order.serviceCode] || 0) + 1;
     try { await interaction.message.delete(); } catch(e) {}
     const msgRef = orderMessages.get(id);
@@ -389,15 +518,15 @@ client.on('interactionCreate', async interaction => {
     const bs = boosterStats.get(order.booster) || { completed: 0, revenue: 0, name: order.booster };
     bs.completed += 1;
     bs.revenue += order.price;
-    boosterStats.set(order.booster, bs);
+    await dbSaveBooster(order.booster, bs);
 
     // ── 更新 VIP 資料 ──
     if (order.contactId && order.contactId !== '未填') {
-      const vip = vipData.get(order.contactId) || { totalSpent: 0, orders: [], name: order.customerName };
+      const vip = vipData.get(order.contactId) || { contactId: order.contactId, totalSpent: 0, orders: [], name: order.customerName };
       const oldTier = getVipTier(vip.totalSpent);
       vip.totalSpent += order.price;
       vip.orders.push({ id, service: order.serviceName, price: order.price, date: order.completedAt });
-      vipData.set(order.contactId, vip);
+      await dbSaveVip(order.contactId, vip);
 
       // ── VIP 升級公告 ──
       const newTier = getVipTier(vip.totalSpent);
@@ -449,7 +578,7 @@ client.on('interactionCreate', async interaction => {
             refData.coupons.push({ amount: 150, reason: `超級推薦人額外獎勵（第${refData.totalReferred}人）`, date: order.completedAt, used: false });
           }
 
-          referrals.set(order.referralCode, refData);
+          await dbSaveReferral(order.referralCode, refData);
         }
       }
     }
@@ -945,44 +1074,99 @@ app.get('/', (req, res) => {
 app.post('/api/order', async (req, res) => {
   try {
     const { serviceCode, gameId, contactId, airplane, map, note, customerName, referralCode } = req.body;
-    const service = SERVICES[serviceCode];
-    const svcName = req.body.serviceName || (service ? `${serviceCode} ${service.name}` : serviceCode);
-    let svcPrice = service ? service.price : 0;
-    const svcGuarantee = service ? service.guarantee : null;
 
-    // ── 推薦碼處理 ──
+    // ── 輸入驗證 ──
+    if (!serviceCode || !SERVICES[serviceCode]) {
+      return res.status(400).json({ error: '無效的服務編號' });
+    }
+    if (!contactId || contactId.trim().length < 2) {
+      return res.status(400).json({ error: '請填寫聯繫方式' });
+    }
+    const quantity = Math.max(1, Math.min(20, parseInt(req.body.quantity) || 1));
+    const service = SERVICES[serviceCode];
+    const svcName = `${serviceCode} ${service.name}`;
+    const unitPrice = service.price;
+    const svcGuarantee = service.guarantee;
+
+    // ── 買五送一計算 ──
+    const buy5Eligible = serviceCode && (serviceCode.startsWith('E-') || serviceCode.startsWith('C-') || serviceCode === 'G-1');
+    let paidQty = quantity;
+    let freeQty = 0;
+    if (buy5Eligible && quantity >= 5) {
+      freeQty = Math.floor(quantity / 5);
+      paidQty = quantity - freeQty;
+    }
+
+    let totalPrice = paidQty * unitPrice;
+
+    // ── VIP 折扣 ──
+    let vipTier = null;
+    let vipDiscount = 1.0;
+    if (contactId && contactId !== '未填') {
+      const vip = vipData.get(contactId);
+      if (vip) {
+        const tier = getVipTier(vip.totalSpent);
+        if (tier.discount < 1.0) {
+          vipTier = tier.name;
+          vipDiscount = tier.discount;
+          totalPrice = Math.round(totalPrice * tier.discount);
+        }
+      }
+    }
+
+    // ── 推薦碼處理（VIP 和推薦碼取較優者，不疊加） ──
     let referralApplied = null;
-    if (referralCode) {
+    if (referralCode && vipDiscount >= 0.95) {
+      // 只有 VIP 折扣不比推薦碼更優時才套用推薦碼
       const refData = referrals.get(referralCode.toUpperCase());
       if (refData && refData.ownerId !== contactId) {
-        // 新客首單 95 折
         const isFirstOrder = !refData.referred.find(r => r.contactId === contactId);
         if (isFirstOrder) {
-          svcPrice = Math.round(svcPrice * 0.95);
+          if (vipDiscount >= 1.0) {
+            // 無 VIP 折扣，套用推薦碼 95 折
+            totalPrice = Math.round(totalPrice * 0.95);
+          }
+          // 有 VIP 但不比 95 折好，維持 VIP 折扣不再疊加
           referralApplied = { code: referralCode.toUpperCase(), discount: '95折', referrerName: refData.ownerName };
         }
       }
     }
 
     const orderId = `MC${++orderCounter}`;
-    const order = { id: orderId, serviceCode, serviceName: svcName, price: svcPrice, guarantee: svcGuarantee, gameId: gameId || '未填', contactId: contactId || '未填', airplane: airplane || '未指定', map: map || '不指定', note: note || '無', customerName: customerName || '網站老闆', status: 'pending', createdAt: new Date().toISOString(), booster: null, boosterId: null, acceptedAt: null, completedAt: null, referralCode: referralApplied ? referralApplied.code : null };
-    orders.set(orderId, order);
+    const order = {
+      id: orderId, serviceCode, serviceName: svcName,
+      price: totalPrice, originalPrice: unitPrice * quantity,
+      guarantee: svcGuarantee,
+      quantity, paidQuantity: paidQty, freeQuantity: freeQty,
+      gameId: gameId || '未填', contactId: contactId || '未填',
+      airplane: airplane || '未指定', map: map || '不指定',
+      note: note || '無', customerName: customerName || '網站老闆',
+      status: 'pending', createdAt: new Date().toISOString(),
+      booster: null, boosterId: null, acceptedAt: null, completedAt: null,
+      referralCode: referralApplied ? referralApplied.code : null,
+      vipTier, vipDiscount: vipDiscount < 1 ? vipDiscount : null,
+    };
+    await dbSaveOrder(order);
     const guild = client.guilds.cache.get(GUILD_ID);
     if (guild && channels.newOrders) {
       const ch = guild.channels.cache.get(channels.newOrders);
       if (ch) {
         const boosterRole = guild.roles.cache.find(r => r.name === 'Booster');
+        const qtyInfo = order.quantity > 1 ? ` x${order.quantity}${order.freeQuantity > 0 ? `（付${order.paidQuantity}送${order.freeQuantity}）` : ''}` : '';
+        const vipInfo = order.vipTier ? `\n👑 VIP ${order.vipTier}（${Math.round(order.vipDiscount*100)}%折）` : '';
         const embed = new EmbedBuilder().setColor(0x00e5ff).setTitle(`🔔 新訂單 #${orderId}`)
-          .setDescription(boosterRole ? `<@&${boosterRole.id}> 有新單！` : '有新訂單！')
-          .addFields({ name: '🛡️ 服務', value: order.serviceName, inline: true },{ name: '💰 金額', value: `${order.price} T`, inline: true },{ name: '🎯 保底', value: order.guarantee || '無', inline: true },{ name: '🎮 遊戲ID', value: order.gameId, inline: true },{ name: '✈️ 飛機', value: order.airplane, inline: true },{ name: '🗺️ 地圖', value: order.map, inline: true },{ name: '📝 備註', value: order.note })
+          .setDescription((boosterRole ? `<@&${boosterRole.id}> 有新單！` : '有新訂單！') + vipInfo)
+          .addFields({ name: '🛡️ 服務', value: order.serviceName + qtyInfo, inline: true },{ name: '💰 金額', value: `${order.price.toLocaleString()} T`, inline: true },{ name: '🎯 保底', value: order.guarantee || '無', inline: true },{ name: '🎮 遊戲ID', value: order.gameId, inline: true },{ name: '✈️ 飛機', value: order.airplane, inline: true },{ name: '🗺️ 地圖', value: order.map, inline: true },{ name: '📝 備註', value: order.note })
           .setFooter({ text: '點擊下方按鈕接單' }).setTimestamp();
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`accept_${orderId}`).setLabel('🎮 接下此單').setStyle(ButtonStyle.Primary));
         const sentMsg = await ch.send({ embeds: [embed], components: [row] });
         orderMessages.set(orderId, { newOrder: { channelId: ch.id, messageId: sentMsg.id } });
       }
     }
-    await sendTelegram(`🔔 新訂單 #${orderId}\n服務：${order.serviceName}\n金額：${order.price} T\n保底：${order.guarantee || '無'}\n遊戲ID：${order.gameId}\n聯繫：${order.contactId}${referralApplied ? `\n🤝 推薦碼：${referralApplied.code}（推薦人：${referralApplied.referrerName}）` : ''}`);
-    res.json({ success: true, orderId, message: `訂單 ${orderId} 已建立`, referral: referralApplied });
+    const tgQty = order.quantity > 1 ? `\n數量：${order.quantity}（付${order.paidQuantity}${order.freeQuantity > 0 ? `送${order.freeQuantity}` : ''}）` : '';
+    const tgVip = order.vipTier ? `\n👑 VIP ${order.vipTier}（${Math.round(order.vipDiscount*100)}%折）` : '';
+    await sendTelegram(`🔔 新訂單 #${orderId}\n服務：${order.serviceName}\n金額：${order.price.toLocaleString()} T${order.originalPrice !== order.price ? `（原價 ${order.originalPrice.toLocaleString()} T）` : ''}${tgQty}${tgVip}\n保底：${order.guarantee || '無'}\n遊戲ID：${order.gameId}\n聯繫：${order.contactId}${referralApplied ? `\n🤝 推薦碼：${referralApplied.code}（推薦人：${referralApplied.referrerName}）` : ''}`);
+    res.json({ success: true, orderId, message: `訂單 ${orderId} 已建立`, referral: referralApplied, vipTier: order.vipTier, vipDiscount: order.vipDiscount, totalPrice: order.price, quantity: order.quantity, paidQuantity: order.paidQuantity, freeQuantity: order.freeQuantity });
   } catch (e) { console.error('訂單錯誤:', e); res.status(500).json({ error: '伺服器錯誤' }); }
 });
 
@@ -1008,12 +1192,13 @@ app.get('/api/live-orders', (req, res) => {
 
 app.get('/api/vip/:contactId', (req, res) => {
   const data = vipData.get(req.params.contactId);
-  if (!data) return res.json({ found: false, tier: 'Rookie', totalSpent: 0, discount: '原價', orders: [] });
+  if (!data) return res.json({ found: false, tier: 'Rookie', totalSpent: 0, discount: '原價', discountNum: 1.0, orders: [] });
   const tier = getVipTier(data.totalSpent);
   res.json({
     found: true, tier: tier.name, emoji: tier.emoji, totalSpent: data.totalSpent,
     discount: tier.discount === 1 ? '原價' : `${Math.round(tier.discount * 100)}%`,
-    orderCount: data.orders.length, recentOrders: data.orders.slice(-5).reverse(),
+    discountNum: tier.discount,
+    orderCount: data.orders.length, recentOrders: (data.orders || []).slice(-5).reverse(),
     nextTier: VIP_TIERS[VIP_TIERS.indexOf(tier) - 1] || null,
   });
 });
@@ -1030,7 +1215,7 @@ app.get('/api/tickets', (req, res) => { res.json([...tickets.values()].reverse()
 // 🤝 推薦系統 API
 // ============================================================
 
-app.post('/api/referral/create', (req, res) => {
+app.post('/api/referral/create', async (req, res) => {
   const { contactId, name } = req.body;
   if (!contactId) return res.status(400).json({ error: '請提供聯繫ID' });
   if (referralByContact.has(contactId)) {
@@ -1043,8 +1228,7 @@ app.post('/api/referral/create', (req, res) => {
     referred: [], totalReferred: 0, milestone: null,
     coupons: [], permDiscount: null, createdAt: new Date().toISOString(),
   };
-  referrals.set(code, data);
-  referralByContact.set(contactId, code);
+  await dbSaveReferral(code, data);
   res.json({ success: true, code, existing: false, data });
 });
 
@@ -1073,10 +1257,19 @@ app.get('/api/referral-leaderboard', (req, res) => {
   res.json(sorted);
 });
 
-app.get('/api/referral-milestones', (req, res) => { res.json(REFERRAL_MILESTONES); });
+app.get('/api/referral-milestones', (req, res) => {
+  res.json(REFERRAL_MILESTONES);
+});
 
 function getTimeDiff(start, end) { if (!start || !end) return '未知'; const diff = new Date(end) - new Date(start); const hours = Math.floor(diff / 3600000); const mins = Math.floor((diff % 3600000) / 60000); if (hours > 0) return `${hours}h ${mins}m`; return `${mins}m`; }
 
 
-app.listen(PORT, () => { console.log(`🌐 API v3.1 運行中：port ${PORT}`); });
-client.login(DISCORD_TOKEN).catch(e => { console.error('Discord 登入失敗:', e.message); process.exit(1); });
+// ── 啟動 ──
+(async () => {
+  await connectMongo();
+  app.listen(PORT, () => { console.log(`🌐 API v3.2 運行中：port ${PORT} | MongoDB: ${mongoReady ? '✅' : '❌ 記憶體模式'}`); });
+  client.login(DISCORD_TOKEN).catch(e => { console.error('Discord 登入失敗:', e.message); process.exit(1); });
+})();
+'`); });
+  client.login(DISCORD_TOKEN).catch(e => { console.error('Discord 登入失敗:', e.message); process.exit(1); });
+})();
