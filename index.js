@@ -1094,7 +1094,7 @@ app.post('/api/order', async (req, res) => {
     let freeQty = 0;
     if (buy5Eligible && quantity >= 5) {
       freeQty = Math.floor(quantity / 5);
-      paidQty = quantity - freeQty;
+      paidQty = quantity; // 買五送一：付全額，額外送單
     }
 
     let totalPrice = paidQty * unitPrice;
@@ -1152,7 +1152,7 @@ app.post('/api/order', async (req, res) => {
       const ch = guild.channels.cache.get(channels.newOrders);
       if (ch) {
         const boosterRole = guild.roles.cache.find(r => r.name === 'Booster');
-        const qtyInfo = order.quantity > 1 ? ` x${order.quantity}${order.freeQuantity > 0 ? `（付${order.paidQuantity}送${order.freeQuantity}）` : ''}` : '';
+        const qtyInfo = order.quantity > 1 ? ` x${order.quantity}${order.freeQuantity > 0 ? `（付${order.paidQuantity}+送${order.freeQuantity}）` : ''}` : '';
         const vipInfo = order.vipTier ? `\n👑 VIP ${order.vipTier}（${Math.round(order.vipDiscount*100)}%折）` : '';
         const embed = new EmbedBuilder().setColor(0x00e5ff).setTitle(`🔔 新訂單 #${orderId}`)
           .setDescription((boosterRole ? `<@&${boosterRole.id}> 有新單！` : '有新訂單！') + vipInfo)
@@ -1163,7 +1163,7 @@ app.post('/api/order', async (req, res) => {
         orderMessages.set(orderId, { newOrder: { channelId: ch.id, messageId: sentMsg.id } });
       }
     }
-    const tgQty = order.quantity > 1 ? `\n數量：${order.quantity}（付${order.paidQuantity}${order.freeQuantity > 0 ? `送${order.freeQuantity}` : ''}）` : '';
+    const tgQty = order.quantity > 1 ? `\n數量：${order.quantity}（付${order.paidQuantity}${order.freeQuantity > 0 ? `+送${order.freeQuantity}` : ''}）` : '';
     const tgVip = order.vipTier ? `\n👑 VIP ${order.vipTier}（${Math.round(order.vipDiscount*100)}%折）` : '';
     await sendTelegram(`🔔 新訂單 #${orderId}\n服務：${order.serviceName}\n金額：${order.price.toLocaleString()} T${order.originalPrice !== order.price ? `（原價 ${order.originalPrice.toLocaleString()} T）` : ''}${tgQty}${tgVip}\n保底：${order.guarantee || '無'}\n遊戲ID：${order.gameId}\n聯繫：${order.contactId}${referralApplied ? `\n🤝 推薦碼：${referralApplied.code}（推薦人：${referralApplied.referrerName}）` : ''}`);
     res.json({ success: true, orderId, message: `訂單 ${orderId} 已建立`, referral: referralApplied, vipTier: order.vipTier, vipDiscount: order.vipDiscount, totalPrice: order.price, quantity: order.quantity, paidQuantity: order.paidQuantity, freeQuantity: order.freeQuantity });
