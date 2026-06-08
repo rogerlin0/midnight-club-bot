@@ -1271,5 +1271,4 @@ function getTimeDiff(start, end) { if (!start || !end) return '未知'; const di
   client.login(DISCORD_TOKEN).catch(e => { console.error('Discord 登入失敗:', e.message); process.exit(1); });
 })();
 '`); });
-  client.login(DISCORD_TOKEN).catch(e => { console.error('Discord 登入失敗:', e.message); process.exit(1); });
-})();
+  })();
