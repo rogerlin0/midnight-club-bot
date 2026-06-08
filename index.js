@@ -1270,5 +1270,3 @@ function getTimeDiff(start, end) { if (!start || !end) return '未知'; const di
   app.listen(PORT, () => { console.log(`🌐 API v3.2 運行中：port ${PORT} | MongoDB: ${mongoReady ? '✅' : '❌ 記憶體模式'}`); });
   client.login(DISCORD_TOKEN).catch(e => { console.error('Discord 登入失敗:', e.message); process.exit(1); });
 })();
-'`); });
-  })();
