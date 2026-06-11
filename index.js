@@ -873,12 +873,12 @@ async function sendLineNotify(userId, messages) {
 async function sendLineOrderNotify(order) {
   if (!lineClient || !LINE_ADMIN_ID) return;
   const qtyText = order.quantity > 1
-    ? order.quantity + ' unit' + (order.freeQuantity > 0 ? '(paid' + order.paidQuantity + '+free' + order.freeQuantity + ')' : '')
-    : '1 unit';
+    ? order.quantity + ' 單' + (order.freeQuantity > 0 ? '（付' + order.paidQuantity + '+送' + order.freeQuantity + '）' : '')
+    : '1 單';
   const vipText = order.vipTier ? 'VIP ' + order.vipTier : '';
   const flexMessage = {
     type: 'flex',
-    altText: 'New Order #' + order.id + ' - ' + order.serviceName,
+    altText: '🔔 新訂單 #' + order.id + ' - ' + order.serviceName,
     contents: {
       type: 'bubble',
       styles: {
@@ -889,7 +889,7 @@ async function sendLineOrderNotify(order) {
       header: {
         type: 'box', layout: 'vertical',
         contents: [
-          { type: 'text', text: 'New Order #' + order.id, color: '#00e5ff', size: 'lg', weight: 'bold' },
+          { type: 'text', text: '🔔 新訂單 #' + order.id, color: '#00e5ff', size: 'lg', weight: 'bold' },
           { type: 'text', text: new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }), color: '#94a3b8', size: 'xs' }
         ]
       },
@@ -897,23 +897,23 @@ async function sendLineOrderNotify(order) {
         type: 'box', layout: 'vertical', spacing: 'md',
         contents: [
           { type: 'box', layout: 'horizontal', contents: [
-            { type: 'text', text: 'Service', color: '#94a3b8', size: 'sm', flex: 2 },
+            { type: 'text', text: '🛡️ 服務', color: '#94a3b8', size: 'sm', flex: 2 },
             { type: 'text', text: order.serviceName, color: '#ffffff', size: 'sm', flex: 5, align: 'end' }
           ]},
           { type: 'box', layout: 'horizontal', contents: [
-            { type: 'text', text: 'Price', color: '#94a3b8', size: 'sm', flex: 2 },
+            { type: 'text', text: '💰 金額', color: '#94a3b8', size: 'sm', flex: 2 },
             { type: 'text', text: order.price.toLocaleString() + ' T', color: '#00e5ff', size: 'sm', weight: 'bold', flex: 5, align: 'end' }
           ]},
           { type: 'box', layout: 'horizontal', contents: [
-            { type: 'text', text: 'Qty', color: '#94a3b8', size: 'sm', flex: 2 },
+            { type: 'text', text: '📦 數量', color: '#94a3b8', size: 'sm', flex: 2 },
             { type: 'text', text: qtyText, color: '#ffffff', size: 'sm', flex: 5, align: 'end' }
           ]},
           { type: 'box', layout: 'horizontal', contents: [
-            { type: 'text', text: 'GameID', color: '#94a3b8', size: 'sm', flex: 2 },
+            { type: 'text', text: '🎮 遊戲ID', color: '#94a3b8', size: 'sm', flex: 2 },
             { type: 'text', text: order.gameId, color: '#ffffff', size: 'sm', flex: 5, align: 'end' }
           ]},
           { type: 'box', layout: 'horizontal', contents: [
-            { type: 'text', text: 'Contact', color: '#94a3b8', size: 'sm', flex: 2 },
+            { type: 'text', text: '📞 聯繫', color: '#94a3b8', size: 'sm', flex: 2 },
             { type: 'text', text: order.contactId, color: '#ffffff', size: 'sm', flex: 5, align: 'end' }
           ]}
         ]
@@ -1154,16 +1154,16 @@ async function handleLineEvent(event) {
   const text = event.message.text.trim();
   let reply = null;
 
-  if (/report|price|cost/.test(text)) {
+  if (/報價|價格|多少錢|費用/.test(text)) {
     reply = { type: 'text', text: 'Price list: escort 400T~3500T, clear 300T~2400T, insurance 250T~450T, gold 550T. VIP discount up to 92%. Buy 5 get 1 free. Visit our website for details.' };
-  } else if (/order|buy/.test(text)) {
-    reply = { type: 'text', text: 'Ordering is easy! Click the menu below to place an order. Buy 5 get 1 free auto-calculated, VIP discount auto-applied!' };
-  } else if (/VIP|discount/.test(text)) {
-    reply = { type: 'text', text: 'VIP tiers: Bronze 5000T 98%, Silver 15000T 97%, Gold 40000T 95%, Diamond 100000T 93%, Legend 200000T 92%. Auto-tracked!' };
-  } else if (/booster|player/.test(text)) {
-    reply = { type: 'text', text: 'Our boosters are in-house trained, livestream available, fastest completion, triple compensation guarantee. 3000+ orders, 99% satisfaction.' };
-  } else if (/status|track/.test(text)) {
-    reply = { type: 'text', text: 'To check order status, please provide your Game ID or LINE/Discord ID. We will reply ASAP!' };
+  } else if (/下單|我要下單|怎麼下單/.test(text)) {
+    reply = { type: 'text', text: '⚡ 下單超簡單！\n\n1️⃣ 點選下方選單「立即下單」\n2️⃣ 選擇服務 → 填寫資料 → 送出\n3️⃣ 我們收到後會立即安排打手\n\n🔗 前往下單：https://bucolic-pie-025fe2.netlify.app/#order\n\n💡 買五送一自動計算，VIP折扣自動套用！' };
+  } else if (/VIP|折扣|等級|優惠/.test(text)) {
+    reply = { type: 'text', text: '👑 VIP 會員制度\n\n🥉 銅牌 — 累積 5,000T → 98折\n🥈 銀牌 — 累積 15,000T → 97折\n🥇 金牌 — 累積 40,000T → 95折\n💎 鑽石 — 累積 100,000T → 93折\n🏆 傳說 — 累積 200,000T → 92折\n\n📌 消費自動累積，無需手動申請\n\n🔗 查詢VIP：https://bucolic-pie-025fe2.netlify.app/#myvip' };
+  } else if (/打手|代練|介紹/.test(text)) {
+    reply = { type: 'text', text: '🎮 午夜俱樂部 打手陣容\n\n✅ 自家培訓，不外聘\n✅ 全程可開直播監督\n✅ 平均完成時間業界最快\n✅ 追繳三重賠付保證\n\n📊 累積完成 3,000+ 單\n⭐ 滿意度 99%\n\n🔗 查看打手：https://bucolic-pie-025fe2.netlify.app/#players' };
+  } else if (/進度|我的單|查詢訂單/.test(text)) {
+    reply = { type: 'text', text: '📦 查詢訂單進度\n\n請提供以下任一資訊：\n1. 你的遊戲 ID\n2. 下單時的 LINE/Discord ID\n\n我們會盡快回覆你目前的進度！\n\n🔗 查詢VIP紀錄：https://bucolic-pie-025fe2.netlify.app/#myvip' };
   }
 
   if (reply && lineClient) {
