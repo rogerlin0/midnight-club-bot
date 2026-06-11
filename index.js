@@ -1,6 +1,7 @@
 // ============================================================
-// 🌙 午夜俱樂部 MK-01 自動接單系統 v3.0
+// 🌙 午夜俱樂部 MK-01 自動接單系統 v3.3
 // Discord Bot + Telegram + 網站 API + 每日報表
+// + LINE Messaging API 整合
 // + 驗證系統 + 排行榜 + 工單 + 每日優惠 + VIP升級公告
 // + VIP查詢API + 即時訂單API + 8591報價同步
 // ============================================================
@@ -13,6 +14,7 @@ const express = require('express');
 const cron = require('node-cron');
 const fetch = require('node-fetch');
 const mongoose = require('mongoose');
+const line = require('@line/bot-sdk');
 
 // ── 環境變數 ──
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
@@ -20,7 +22,14 @@ const GUILD_ID = process.env.GUILD_ID;
 const TG_TOKEN = process.env.TELEGRAM_TOKEN;
 const TG_CHAT = process.env.TELEGRAM_CHAT_ID;
 const MONGO_URI = process.env.MONGO_URI;
+const LINE_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+const LINE_SECRET = process.env.LINE_CHANNEL_SECRET;
+const LINE_ADMIN_ID = process.env.LINE_ADMIN_USER_ID;
 const PORT = process.env.PORT || 3000;
+
+// ── LINE Client ──
+const lineConfig = { channelAccessToken: LINE_TOKEN || '', channelSecret: LINE_SECRET || '' };
+const lineClient = LINE_TOKEN ? new line.messagingApi.MessagingApiClient({ channelAccessToken: LINE_TOKEN }) : null;
 
 // ══════════════════════════════════════════
 // MongoDB Schemas
@@ -267,7 +276,7 @@ const client = new Client({
 });
 
 client.once('ready', async () => {
-  console.log(`🌙 MK-01 v3.0 已上線：${client.user.tag}`);
+  console.log(`🌙 MK-01 v3.3 已上線：${client.user.tag}`);
   const guild = client.guilds.cache.get(GUILD_ID);
   if (!guild) return console.error('找不到伺服器！');
   await setupChannels(guild);
@@ -849,6 +858,71 @@ async function sendTelegram(text) {
   } catch (e) { console.error('Telegram 失敗:', e.message); }
 }
 
+
+
+// ============================================================
+// LINE Messaging API
+// ============================================================
+async function sendLineNotify(userId, messages) {
+  if (!lineClient || !userId) return;
+  try {
+    await lineClient.pushMessage({ to: userId, messages: Array.isArray(messages) ? messages : [messages] });
+  } catch (e) { console.error('LINE push fail:', e.message); }
+}
+
+async function sendLineOrderNotify(order) {
+  if (!lineClient || !LINE_ADMIN_ID) return;
+  const qtyText = order.quantity > 1
+    ? order.quantity + ' unit' + (order.freeQuantity > 0 ? '(paid' + order.paidQuantity + '+free' + order.freeQuantity + ')' : '')
+    : '1 unit';
+  const vipText = order.vipTier ? 'VIP ' + order.vipTier : '';
+  const flexMessage = {
+    type: 'flex',
+    altText: 'New Order #' + order.id + ' - ' + order.serviceName,
+    contents: {
+      type: 'bubble',
+      styles: {
+        header: { backgroundColor: '#0a0e1a' },
+        body: { backgroundColor: '#111827' },
+        footer: { backgroundColor: '#111827' }
+      },
+      header: {
+        type: 'box', layout: 'vertical',
+        contents: [
+          { type: 'text', text: 'New Order #' + order.id, color: '#00e5ff', size: 'lg', weight: 'bold' },
+          { type: 'text', text: new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }), color: '#94a3b8', size: 'xs' }
+        ]
+      },
+      body: {
+        type: 'box', layout: 'vertical', spacing: 'md',
+        contents: [
+          { type: 'box', layout: 'horizontal', contents: [
+            { type: 'text', text: 'Service', color: '#94a3b8', size: 'sm', flex: 2 },
+            { type: 'text', text: order.serviceName, color: '#ffffff', size: 'sm', flex: 5, align: 'end' }
+          ]},
+          { type: 'box', layout: 'horizontal', contents: [
+            { type: 'text', text: 'Price', color: '#94a3b8', size: 'sm', flex: 2 },
+            { type: 'text', text: order.price.toLocaleString() + ' T', color: '#00e5ff', size: 'sm', weight: 'bold', flex: 5, align: 'end' }
+          ]},
+          { type: 'box', layout: 'horizontal', contents: [
+            { type: 'text', text: 'Qty', color: '#94a3b8', size: 'sm', flex: 2 },
+            { type: 'text', text: qtyText, color: '#ffffff', size: 'sm', flex: 5, align: 'end' }
+          ]},
+          { type: 'box', layout: 'horizontal', contents: [
+            { type: 'text', text: 'GameID', color: '#94a3b8', size: 'sm', flex: 2 },
+            { type: 'text', text: order.gameId, color: '#ffffff', size: 'sm', flex: 5, align: 'end' }
+          ]},
+          { type: 'box', layout: 'horizontal', contents: [
+            { type: 'text', text: 'Contact', color: '#94a3b8', size: 'sm', flex: 2 },
+            { type: 'text', text: order.contactId, color: '#ffffff', size: 'sm', flex: 5, align: 'end' }
+          ]}
+        ]
+      }
+    }
+  };
+  await sendLineNotify(LINE_ADMIN_ID, flexMessage);
+}
+
 // ============================================================
 // ⏰ 排程任務
 // ============================================================
@@ -1067,8 +1141,40 @@ app.use((req, res, next) => {
   next();
 });
 
+// LINE Webhook
+app.post('/webhook/line', (req, res) => {
+  res.status(200).end();
+  if (req.body && req.body.events) {
+    for (const event of req.body.events) { handleLineEvent(event); }
+  }
+});
+
+async function handleLineEvent(event) {
+  if (event.type !== 'message' || event.message.type !== 'text') return;
+  const text = event.message.text.trim();
+  let reply = null;
+
+  if (/report|price|cost/.test(text)) {
+    reply = { type: 'text', text: 'Price list: escort 400T~3500T, clear 300T~2400T, insurance 250T~450T, gold 550T. VIP discount up to 92%. Buy 5 get 1 free. Visit our website for details.' };
+  } else if (/order|buy/.test(text)) {
+    reply = { type: 'text', text: 'Ordering is easy! Click the menu below to place an order. Buy 5 get 1 free auto-calculated, VIP discount auto-applied!' };
+  } else if (/VIP|discount/.test(text)) {
+    reply = { type: 'text', text: 'VIP tiers: Bronze 5000T 98%, Silver 15000T 97%, Gold 40000T 95%, Diamond 100000T 93%, Legend 200000T 92%. Auto-tracked!' };
+  } else if (/booster|player/.test(text)) {
+    reply = { type: 'text', text: 'Our boosters are in-house trained, livestream available, fastest completion, triple compensation guarantee. 3000+ orders, 99% satisfaction.' };
+  } else if (/status|track/.test(text)) {
+    reply = { type: 'text', text: 'To check order status, please provide your Game ID or LINE/Discord ID. We will reply ASAP!' };
+  }
+
+  if (reply && lineClient) {
+    try {
+      await lineClient.replyMessage({ replyToken: event.replyToken, messages: [reply] });
+    } catch (e) { console.error('LINE reply fail:', e.message); }
+  }
+}
+
 app.get('/', (req, res) => {
-  res.json({ status: '🌙 MK-01 v3.0 Online', orders: orders.size, uptime: process.uptime(), vipMembers: vipData.size, openTickets: [...tickets.values()].filter(t => t.status === 'open').length });
+  res.json({ status: '🌙 MK-01 v3.3 Online', orders: orders.size, uptime: process.uptime(), vipMembers: vipData.size, openTickets: [...tickets.values()].filter(t => t.status === 'open').length });
 });
 
 app.post('/api/order', async (req, res) => {
@@ -1166,6 +1272,7 @@ app.post('/api/order', async (req, res) => {
     const tgQty = order.quantity > 1 ? `\n數量：${order.quantity}（付${order.paidQuantity}${order.freeQuantity > 0 ? `+送${order.freeQuantity}` : ''}）` : '';
     const tgVip = order.vipTier ? `\n👑 VIP ${order.vipTier}（${Math.round(order.vipDiscount*100)}%折）` : '';
     await sendTelegram(`🔔 新訂單 #${orderId}\n服務：${order.serviceName}\n金額：${order.price.toLocaleString()} T${order.originalPrice !== order.price ? `（原價 ${order.originalPrice.toLocaleString()} T）` : ''}${tgQty}${tgVip}\n保底：${order.guarantee || '無'}\n遊戲ID：${order.gameId}\n聯繫：${order.contactId}${referralApplied ? `\n🤝 推薦碼：${referralApplied.code}（推薦人：${referralApplied.referrerName}）` : ''}`);
+    await sendLineOrderNotify(order);
     res.json({ success: true, orderId, message: `訂單 ${orderId} 已建立`, referral: referralApplied, vipTier: order.vipTier, vipDiscount: order.vipDiscount, totalPrice: order.price, quantity: order.quantity, paidQuantity: order.paidQuantity, freeQuantity: order.freeQuantity });
   } catch (e) { console.error('訂單錯誤:', e); res.status(500).json({ error: '伺服器錯誤' }); }
 });
