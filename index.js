@@ -1,4 +1,4 @@
-// ============================================================
+h// ============================================================
 // 🌙 午夜俱樂部 MK-01 自動接單系統 v3.3
 // Discord Bot + Telegram + 網站 API + 每日報表
 // + LINE Messaging API 整合
@@ -20,7 +20,7 @@ const line = require('@line/bot-sdk');
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
 const TG_TOKEN = process.env.TELEGRAM_TOKEN;
-const TG_CHAT = process.env.TELEGRAM_CHAT_ID;
+const TG_CHAT = process.env.TELEGRAM_CHAT_ID;h
 const MONGO_URI = process.env.MONGO_URI;
 const LINE_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 const LINE_SECRET = process.env.LINE_CHANNEL_SECRET;
@@ -1155,7 +1155,7 @@ async function handleLineEvent(event) {
   let reply = null;
 
   if (/報價|價格|多少錢|費用/.test(text)) {
-    reply = { type: 'text', text: 'Price list: escort 400T~3500T, clear 300T~2400T, insurance 250T~450T, gold 550T. VIP discount up to 92%. Buy 5 get 1 free. Visit our website for details.' };
+    reply = { type: 'text', text: '📋 午夜俱樂部 報價表\n\n🛡️ 護航：400T~3,500T\n🧹 清圖：300T~2,400T\n🏦 搬保險：250T~450T\n💰 搬金：550T\n\n👑 VIP最高92折 | 🎁 買五送一\n\n🔗 完整報價：https://bucolic-pie-025fe2.netlify.app/#pricing' };
   } else if (/下單|我要下單|怎麼下單/.test(text)) {
     reply = { type: 'text', text: '⚡ 下單超簡單！\n\n1️⃣ 點選下方選單「立即下單」\n2️⃣ 選擇服務 → 填寫資料 → 送出\n3️⃣ 我們收到後會立即安排打手\n\n🔗 前往下單：https://bucolic-pie-025fe2.netlify.app/#order\n\n💡 買五送一自動計算，VIP折扣自動套用！' };
   } else if (/VIP|折扣|等級|優惠/.test(text)) {
