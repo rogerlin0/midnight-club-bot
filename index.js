@@ -1,4 +1,4 @@
-h// ============================================================
+// ============================================================
 // 🌙 午夜俱樂部 MK-01 自動接單系統 v3.3
 // Discord Bot + Telegram + 網站 API + 每日報表
 // + LINE Messaging API 整合
@@ -20,7 +20,7 @@ const line = require('@line/bot-sdk');
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
 const TG_TOKEN = process.env.TELEGRAM_TOKEN;
-const TG_CHAT = process.env.TELEGRAM_CHAT_ID;h
+const TG_CHAT = process.env.TELEGRAM_CHAT_ID;
 const MONGO_URI = process.env.MONGO_URI;
 const LINE_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 const LINE_SECRET = process.env.LINE_CHANNEL_SECRET;
