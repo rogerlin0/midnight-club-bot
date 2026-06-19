@@ -1,7 +1,6 @@
 // ============================================================
 // 🌙 午夜俱樂部 MK-01 自動接單系統 v3.3
 // Discord Bot + Telegram + 網站 API + 每日報表
-// + LINE Messaging API 整合
 // + 驗證系統 + 排行榜 + 工單 + 每日優惠 + VIP升級公告
 // + VIP查詢API + 即時訂單API + 8591報價同步
 // ============================================================
@@ -276,7 +275,7 @@ const client = new Client({
 });
 
 client.once('ready', async () => {
-  console.log(`🌙 MK-01 v3.3 已上線：${client.user.tag}`);
+  console.log(`🌙 MK-01 v3.0 已上線：${client.user.tag}`);
   const guild = client.guilds.cache.get(GUILD_ID);
   if (!guild) return console.error('找不到伺服器！');
   await setupChannels(guild);
@@ -858,69 +857,104 @@ async function sendTelegram(text) {
   } catch (e) { console.error('Telegram 失敗:', e.message); }
 }
 
-
-
 // ============================================================
-// LINE Messaging API
+// 📱 LINE Messaging API
 // ============================================================
 async function sendLineNotify(userId, messages) {
   if (!lineClient || !userId) return;
   try {
     await lineClient.pushMessage({ to: userId, messages: Array.isArray(messages) ? messages : [messages] });
-  } catch (e) { console.error('LINE push fail:', e.message); }
+  } catch (e) { console.error('LINE 推播失敗:', e.message); }
 }
 
 async function sendLineOrderNotify(order) {
   if (!lineClient || !LINE_ADMIN_ID) return;
   const qtyText = order.quantity > 1
-    ? order.quantity + ' 單' + (order.freeQuantity > 0 ? '（付' + order.paidQuantity + '+送' + order.freeQuantity + '）' : '')
+    ? `${order.quantity} 單${order.freeQuantity > 0 ? `（付${order.paidQuantity}+送${order.freeQuantity}）` : ''}`
     : '1 單';
-  const vipText = order.vipTier ? 'VIP ' + order.vipTier : '';
-  const flexMessage = {
-    type: 'flex',
-    altText: '🔔 新訂單 #' + order.id + ' - ' + order.serviceName,
+  const vipText = order.vipTier ? `👑 VIP ${order.vipTier}` : '';
+  const flexMsg = {
+    type: 'flex', altText: `🔔 新訂單 #${order.id} — ${order.serviceName}`,
     contents: {
       type: 'bubble',
-      styles: {
-        header: { backgroundColor: '#0a0e1a' },
-        body: { backgroundColor: '#111827' },
-        footer: { backgroundColor: '#111827' }
-      },
-      header: {
-        type: 'box', layout: 'vertical',
-        contents: [
-          { type: 'text', text: '🔔 新訂單 #' + order.id, color: '#00e5ff', size: 'lg', weight: 'bold' },
-          { type: 'text', text: new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }), color: '#94a3b8', size: 'xs' }
-        ]
-      },
-      body: {
-        type: 'box', layout: 'vertical', spacing: 'md',
-        contents: [
-          { type: 'box', layout: 'horizontal', contents: [
-            { type: 'text', text: '🛡️ 服務', color: '#94a3b8', size: 'sm', flex: 2 },
-            { type: 'text', text: order.serviceName, color: '#ffffff', size: 'sm', flex: 5, align: 'end' }
-          ]},
-          { type: 'box', layout: 'horizontal', contents: [
-            { type: 'text', text: '💰 金額', color: '#94a3b8', size: 'sm', flex: 2 },
-            { type: 'text', text: order.price.toLocaleString() + ' T', color: '#00e5ff', size: 'sm', weight: 'bold', flex: 5, align: 'end' }
-          ]},
-          { type: 'box', layout: 'horizontal', contents: [
-            { type: 'text', text: '📦 數量', color: '#94a3b8', size: 'sm', flex: 2 },
-            { type: 'text', text: qtyText, color: '#ffffff', size: 'sm', flex: 5, align: 'end' }
-          ]},
-          { type: 'box', layout: 'horizontal', contents: [
-            { type: 'text', text: '🎮 遊戲ID', color: '#94a3b8', size: 'sm', flex: 2 },
-            { type: 'text', text: order.gameId, color: '#ffffff', size: 'sm', flex: 5, align: 'end' }
-          ]},
-          { type: 'box', layout: 'horizontal', contents: [
-            { type: 'text', text: '📞 聯繫', color: '#94a3b8', size: 'sm', flex: 2 },
-            { type: 'text', text: order.contactId, color: '#ffffff', size: 'sm', flex: 5, align: 'end' }
-          ]}
-        ]
-      }
+      styles: { header: { backgroundColor: '#0a0e1a' }, body: { backgroundColor: '#111827' }, footer: { backgroundColor: '#111827' } },
+      header: { type: 'box', layout: 'vertical', contents: [
+        { type: 'text', text: `🔔 新訂單 #${order.id}`, color: '#00e5ff', size: 'lg', weight: 'bold' },
+        { type: 'text', text: new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }), color: '#94a3b8', size: 'xs' }
+      ]},
+      body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
+        { type: 'box', layout: 'horizontal', contents: [
+          { type: 'text', text: '服務', color: '#94a3b8', size: 'sm', flex: 2 },
+          { type: 'text', text: order.serviceName, color: '#ffffff', size: 'sm', flex: 5, align: 'end' }
+        ]},
+        { type: 'box', layout: 'horizontal', contents: [
+          { type: 'text', text: '金額', color: '#94a3b8', size: 'sm', flex: 2 },
+          { type: 'text', text: `${order.price.toLocaleString()} T`, color: '#00e5ff', size: 'sm', weight: 'bold', flex: 5, align: 'end' }
+        ]},
+        { type: 'box', layout: 'horizontal', contents: [
+          { type: 'text', text: '數量', color: '#94a3b8', size: 'sm', flex: 2 },
+          { type: 'text', text: qtyText, color: '#ffffff', size: 'sm', flex: 5, align: 'end' }
+        ]},
+        { type: 'box', layout: 'horizontal', contents: [
+          { type: 'text', text: '遊戲ID', color: '#94a3b8', size: 'sm', flex: 2 },
+          { type: 'text', text: order.gameId, color: '#ffffff', size: 'sm', flex: 5, align: 'end' }
+        ]},
+        { type: 'box', layout: 'horizontal', contents: [
+          { type: 'text', text: '聯繫', color: '#94a3b8', size: 'sm', flex: 2 },
+          { type: 'text', text: order.contactId, color: '#ffffff', size: 'sm', flex: 5, align: 'end' }
+        ]},
+        ...(vipText ? [{ type: 'box', layout: 'horizontal', contents: [
+          { type: 'text', text: 'VIP', color: '#94a3b8', size: 'sm', flex: 2 },
+          { type: 'text', text: vipText, color: '#fbbf24', size: 'sm', flex: 5, align: 'end' }
+        ]}] : []),
+      ]},
+      footer: { type: 'box', layout: 'vertical', contents: [
+        { type: 'button', action: { type: 'uri', label: '查看訂單', uri: 'https://bucolic-pie-025fe2.netlify.app/#order' }, style: 'primary', color: '#00e5ff' }
+      ]}
     }
   };
-  await sendLineNotify(LINE_ADMIN_ID, flexMessage);
+  await sendLineNotify(LINE_ADMIN_ID, flexMsg);
+}
+
+// LINE Webhook — 自動回覆
+async function handleLineEvent(event) {
+  if (event.type !== 'message') return;
+
+  // ── 轉發客人訊息到管理員私人 LINE（文字/圖片/貼圖都通知）──
+  const senderId = event.source && event.source.userId;
+  if (senderId && LINE_ADMIN_ID && senderId !== LINE_ADMIN_ID && lineClient) {
+    let senderName = '客人';
+    try { const prof = await lineClient.getProfile(senderId); senderName = prof.displayName || senderName; } catch (e) {}
+    let preview;
+    if (event.message.type === 'text') preview = event.message.text;
+    else if (event.message.type === 'image') preview = '[圖片]';
+    else if (event.message.type === 'sticker') preview = '[貼圖]';
+    else preview = `[${event.message.type}]`;
+    await sendLineNotify(LINE_ADMIN_ID, { type: 'text', text: `📨 LINE 新訊息\n👤 ${senderName}\n💬 ${preview}\n\n（在官方帳號 App 直接回覆）` }).catch(() => {});
+  }
+
+  if (event.message.type !== 'text') return;
+  const text = event.message.text.trim();
+  let reply = null;
+  const SITE = 'https://midnight-club.roger96141.workers.dev';
+
+  if (/報價|價格|多少錢|費用/.test(text)) {
+    reply = { type: 'text', text: `📋 午夜俱樂部 報價表\n\n🛡️ 護航：400T~3,500T\n🧹 清圖：300T~2,400T\n🏦 搬保險：250T~450T\n💰 搬金：550T\n\n👑 VIP最高92折 | 🎁 買五送一\n\n🔗 完整報價：${SITE}/#pricing` };
+  } else if (/下單|我要下單|怎麼下單/.test(text)) {
+    reply = { type: 'text', text: `⚡ 下單超簡單！\n\n1️⃣ 點下方選單「立即下單」\n2️⃣ 選服務 → 填資料 → 送出\n3️⃣ 我們立即安排打手\n\n🔗 ${SITE}/#order` };
+  } else if (/VIP|折扣|等級|優惠/.test(text)) {
+    reply = { type: 'text', text: `👑 VIP 制度\n\n🥉 銅牌 5,000T → 98折\n🥈 銀牌 15,000T → 97折\n🥇 金牌 40,000T → 95折\n💎 鑽石 100,000T → 93折\n🏆 傳說 200,000T → 92折\n\n🔗 查詢：${SITE}/#myvip` };
+  } else if (/打手|代練|介紹/.test(text)) {
+    reply = { type: 'text', text: `🎮 打手陣容\n\n✅ 自家培訓不外聘\n✅ 全程可直播\n✅ 追繳三重賠付\n📊 3,000+單 | ⭐ 99%滿意度\n\n🔗 ${SITE}/#players` };
+  } else if (/進度|我的單|查詢訂單/.test(text)) {
+    reply = { type: 'text', text: `📦 查詢訂單進度\n\n請提供：\n1. 你的遊戲 ID\n2. LINE/Discord ID\n\n我們會盡快回覆！\n🔗 ${SITE}/#myvip` };
+  }
+
+  if (reply && lineClient) {
+    try {
+      await lineClient.replyMessage({ replyToken: event.replyToken, messages: [reply] });
+    } catch (e) { console.error('LINE 回覆失敗:', e.message); }
+  }
 }
 
 // ============================================================
@@ -1141,7 +1175,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// LINE Webhook
+// ── LINE Webhook ──
 app.post('/webhook/line', (req, res) => {
   res.status(200).end();
   if (req.body && req.body.events) {
@@ -1149,36 +1183,36 @@ app.post('/webhook/line', (req, res) => {
   }
 });
 
-async function handleLineEvent(event) {
-  if (event.type !== 'message' || event.message.type !== 'text') return;
-  const text = event.message.text.trim();
-  let reply = null;
-
-  if (/報價|價格|多少錢|費用/.test(text)) {
-    reply = { type: 'text', text: '📋 午夜俱樂部 報價表\n\n🛡️ 護航：400T~3,500T\n🧹 清圖：300T~2,400T\n🏦 搬保險：250T~450T\n💰 搬金：550T\n\n👑 VIP最高92折 | 🎁 買五送一\n\n🔗 完整報價：https://bucolic-pie-025fe2.netlify.app/#pricing' };
-  } else if (/下單|我要下單|怎麼下單/.test(text)) {
-    reply = { type: 'text', text: '⚡ 下單超簡單！\n\n1️⃣ 點選下方選單「立即下單」\n2️⃣ 選擇服務 → 填寫資料 → 送出\n3️⃣ 我們收到後會立即安排打手\n\n🔗 前往下單：https://bucolic-pie-025fe2.netlify.app/#order\n\n💡 買五送一自動計算，VIP折扣自動套用！' };
-  } else if (/VIP|折扣|等級|優惠/.test(text)) {
-    reply = { type: 'text', text: '👑 VIP 會員制度\n\n🥉 銅牌 — 累積 5,000T → 98折\n🥈 銀牌 — 累積 15,000T → 97折\n🥇 金牌 — 累積 40,000T → 95折\n💎 鑽石 — 累積 100,000T → 93折\n🏆 傳說 — 累積 200,000T → 92折\n\n📌 消費自動累積，無需手動申請\n\n🔗 查詢VIP：https://bucolic-pie-025fe2.netlify.app/#myvip' };
-  } else if (/打手|代練|介紹/.test(text)) {
-    reply = { type: 'text', text: '🎮 午夜俱樂部 打手陣容\n\n✅ 自家培訓，不外聘\n✅ 全程可開直播監督\n✅ 平均完成時間業界最快\n✅ 追繳三重賠付保證\n\n📊 累積完成 3,000+ 單\n⭐ 滿意度 99%\n\n🔗 查看打手：https://bucolic-pie-025fe2.netlify.app/#players' };
-  } else if (/進度|我的單|查詢訂單/.test(text)) {
-    reply = { type: 'text', text: '📦 查詢訂單進度\n\n請提供以下任一資訊：\n1. 你的遊戲 ID\n2. 下單時的 LINE/Discord ID\n\n我們會盡快回覆你目前的進度！\n\n🔗 查詢VIP紀錄：https://bucolic-pie-025fe2.netlify.app/#myvip' };
-  }
-
-  if (reply && lineClient) {
-    try {
-      await lineClient.replyMessage({ replyToken: event.replyToken, messages: [reply] });
-    } catch (e) { console.error('LINE reply fail:', e.message); }
-  }
-}
-
 app.get('/', (req, res) => {
-  res.json({ status: '🌙 MK-01 v3.3 Online', orders: orders.size, uptime: process.uptime(), vipMembers: vipData.size, openTickets: [...tickets.values()].filter(t => t.status === 'open').length });
+  res.json({ status: '🌙 MK-01 v3.0 Online', orders: orders.size, uptime: process.uptime(), vipMembers: vipData.size, openTickets: [...tickets.values()].filter(t => t.status === 'open').length });
 });
+
+// ── 簡易防灌單流量限制（每 IP 每分鐘最多 5 筆）──
+const orderRateLimit = new Map();
+function checkOrderRate(ip) {
+  const now = Date.now();
+  const windowMs = 60 * 1000;
+  const maxReq = 5;
+  const hits = (orderRateLimit.get(ip) || []).filter(t => now - t < windowMs);
+  hits.push(now);
+  orderRateLimit.set(ip, hits);
+  return hits.length <= maxReq;
+}
+// 定期清理舊紀錄，避免記憶體累積
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, hits] of orderRateLimit) {
+    const fresh = hits.filter(t => now - t < 60000);
+    if (fresh.length === 0) orderRateLimit.delete(ip); else orderRateLimit.set(ip, fresh);
+  }
+}, 5 * 60 * 1000);
 
 app.post('/api/order', async (req, res) => {
   try {
+    const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
+    if (!checkOrderRate(clientIp)) {
+      return res.status(429).json({ error: '下單太頻繁，請稍後再試（或直接加 LINE 下單）' });
+    }
     const { serviceCode, gameId, contactId, airplane, map, note, customerName, referralCode } = req.body;
 
     // ── 輸入驗證 ──
@@ -1374,6 +1408,6 @@ function getTimeDiff(start, end) { if (!start || !end) return '未知'; const di
 // ── 啟動 ──
 (async () => {
   await connectMongo();
-  app.listen(PORT, () => { console.log(`🌐 API v3.2 運行中：port ${PORT} | MongoDB: ${mongoReady ? '✅' : '❌ 記憶體模式'}`); });
+  app.listen(PORT, () => { console.log(`🌐 API v3.3 運行中：port ${PORT} | MongoDB: ${mongoReady ? '✅' : '❌ 記憶體模式'}`); });
   client.login(DISCORD_TOKEN).catch(e => { console.error('Discord 登入失敗:', e.message); process.exit(1); });
 })();
