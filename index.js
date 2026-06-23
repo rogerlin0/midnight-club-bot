@@ -202,38 +202,75 @@ const channels = {};
 
 // ── 服務報價表 ──
 const SERVICES = {
-  'E-0': { name: '護航⓪', price: 400, guarantee: '550萬', cat: '護航' },
-  'E-1': { name: '護航①', price: 750, guarantee: '1,388萬', cat: '護航' },
-  'E-2': { name: '護航②', price: 1200, guarantee: '2,588萬', cat: '護航' },
-  'E-3': { name: '護航③', price: 1700, guarantee: '3,788萬', cat: '護航' },
-  'E-4': { name: '護航④', price: 2200, guarantee: '4,888萬', cat: '護航' },
-  'E-5': { name: '護航⑤', price: 3200, guarantee: '7,388萬', cat: '護航' },
-  'E-6': { name: '護航⑥', price: 4000, guarantee: '1億', cat: '護航' },
-  'E-7': { name: '護航⑦', price: 6000, guarantee: '1.5億', cat: '護航' },
-  'E-8': { name: '護航⑧', price: 7900, guarantee: '2億', cat: '護航' },
+  // 護航・計算總價（保底×0.4）
+  'H-01': { name: '護航 1000萬', price: 400, guarantee: '1,000萬', cat: '護航' },
+  'H-02': { name: '護航 2000萬', price: 800, guarantee: '2,000萬', cat: '護航' },
+  'H-03': { name: '護航 3000萬', price: 1200, guarantee: '3,000萬', cat: '護航' },
+  'H-04': { name: '護航 4000萬', price: 1600, guarantee: '4,000萬', cat: '護航' },
+  'H-05': { name: '護航 5000萬', price: 2000, guarantee: '5,000萬', cat: '護航' },
+  'H-06': { name: '護航 8000萬', price: 3200, guarantee: '8,000萬', cat: '護航' },
+  'H-07': { name: '護航 1億', price: 4000, guarantee: '1億', cat: '護航' },
+  'H-08': { name: '護航 1.5億', price: 6000, guarantee: '1.5億', cat: '護航' },
+  'H-09': { name: '護航 2億', price: 8000, guarantee: '2億', cat: '護航' },
+  'H-10': { name: '護航 3億', price: 12000, guarantee: '3億', cat: '護航' },
+  'H-11': { name: '護航 5億', price: 20000, guarantee: '5億', cat: '護航' },
+  'H-12': { name: '護航 8億', price: 32000, guarantee: '8億', cat: '護航' },
+  'H-13': { name: '護航 10億', price: 40000, guarantee: '10億', cat: '護航' },
+  // 護航・單局撤離
+  'R-1': { name: '單局撤離 300萬', price: 400, guarantee: '300萬', cat: '護航' },
+  'R-2': { name: '單局撤離 500萬', price: 500, guarantee: '500萬', cat: '護航' },
+  'R-3': { name: '單局撤離 700萬', price: 800, guarantee: '700萬', cat: '護航' },
+  'R-4': { name: '單局撤離 1000萬', price: 1200, guarantee: '1,000萬', cat: '護航' },
+  'R-5': { name: '單局撤離 1300萬', price: 1600, guarantee: '1,300萬', cat: '護航' },
+  'R-6': { name: '護航包 3H', price: 3600, guarantee: null, cat: '護航' },
+  // 清圖
   'C-1': { name: '電台清圖', price: 520, guarantee: null, cat: '清圖' },
   'C-2': { name: '王牌清圖', price: 1000, guarantee: null, cat: '清圖' },
   'C-3': { name: '主教練上場', price: 1200, guarantee: null, cat: '清圖' },
+  'C-4': { name: '全地圖通清套餐', price: 4200, guarantee: null, cat: '清圖' },
+  'C-5': { name: '清圖月卡', price: 12000, guarantee: null, cat: '清圖' },
+  // 摸保險
   'I-1': { name: '摸保險 10個', price: 800, guarantee: '1,000萬', cat: '摸保險' },
-  'I-2': { name: '摸保險 50個', price: 4000, guarantee: '4,500萬', cat: '摸保險' },
-  'I-3': { name: '摸保險 100個', price: 7000, guarantee: '8,000萬', cat: '摸保險' },
+  'I-2': { name: '摸保險 30個', price: 2400, guarantee: '2,800萬', cat: '摸保險' },
+  'I-3': { name: '摸保險 50個', price: 4000, guarantee: '4,500萬', cat: '摸保險' },
+  'I-4': { name: '摸保險 100個', price: 7000, guarantee: '8,000萬', cat: '摸保險' },
+  'I-5': { name: '摸保險 200個', price: 13000, guarantee: '1.6億', cat: '摸保險' },
+  // 對賭
   'G-1': { name: '單局單大金', price: 550, guarantee: null, cat: '對賭' },
-  'G-2': { name: '單局帶出1500萬', price: 6888, guarantee: '3,888萬', cat: '對賭' },
-  'G-3': { name: '指定任意大金（不含理想國/機密）', price: 5400, guarantee: null, cat: '對賭' },
+  'G-2': { name: '指定任意大金', price: 5400, guarantee: null, cat: '對賭' },
+  'G-3': { name: '雙大金保險局', price: 1200, guarantee: null, cat: '對賭' },
+  // 特殊地圖
   'S-1': { name: '機密文件', price: 4100, guarantee: '6,888萬', cat: '特殊地圖' },
   'S-2': { name: '理想國', price: 2680, guarantee: '3,999萬', cat: '特殊地圖' },
-  'S-3': { name: '機密文件單', price: 4000, guarantee: '7,000萬', cat: '特殊地圖' },
+  'S-3': { name: '前線要塞通關', price: 1500, guarantee: null, cat: '特殊地圖' },
+  'S-4': { name: '北山深入護送', price: 1800, guarantee: null, cat: '特殊地圖' },
+  'S-5': { name: '五大地圖全制霸', price: 11000, guarantee: null, cat: '特殊地圖' },
+  // 代肝
   'A-1': { name: 'S5 3x3代肝', price: 2800, guarantee: null, cat: '代肝' },
-  'A-2': { name: '單日代肝8H', price: 1200, guarantee: null, cat: '代肝' },
-  'A-3': { name: '週套餐代肝', price: 7500, guarantee: null, cat: '代肝' },
+  'A-2': { name: '五天託管代肝', price: 7500, guarantee: null, cat: '代肝' },
+  'A-4': { name: '聲望/等級代練', price: 600, guarantee: null, cat: '代肝' },
+  // 陪玩
   'P-1': { name: '技術男陪/H', price: 350, guarantee: null, cat: '陪玩' },
   'P-2': { name: '娛樂女陪/H', price: 400, guarantee: null, cat: '陪玩' },
   'P-5': { name: '技術女陪/H', price: 600, guarantee: null, cat: '陪玩' },
   'P-6': { name: 'TW女陪/H', price: 450, guarantee: null, cat: '陪玩' },
+  'P-7': { name: '雙排三排陪打/H', price: 320, guarantee: null, cat: '陪玩' },
+  'P-8': { name: '新手教學帶飛/H', price: 500, guarantee: null, cat: '陪玩' },
   'P-3': { name: '長時陪做套餐', price: 3688, guarantee: null, cat: '陪玩' },
   'P-4': { name: '任務救急', price: 260, guarantee: null, cat: '陪玩' },
+  // 配裝改槍
+  'B-1': { name: '武器改裝配槍', price: 150, guarantee: null, cat: '配裝' },
+  'B-2': { name: '全套配裝實裝', price: 450, guarantee: null, cat: '配裝' },
+  'B-3': { name: '一對一打法教學/H', price: 500, guarantee: null, cat: '配裝' },
+  'B-4': { name: '地圖點位路線教學', price: 350, guarantee: null, cat: '配裝' },
+  // 扶貧單
   'W-1': { name: '扶貧單A', price: 350, guarantee: '700萬', cat: '扶貧單' },
   'W-2': { name: '扶貧單B', price: 700, guarantee: '1,500萬', cat: '扶貧單' },
+  'W-3': { name: '扶貧單C', price: 199, guarantee: '350萬', cat: '扶貧單' },
+  // 戰神錦標賽
+  'T-1': { name: '戰神單局清圖', price: 800, guarantee: null, cat: '戰神錦標賽' },
+  'T-2': { name: '戰神升星(不吃物資)', price: 50, guarantee: null, cat: '戰神錦標賽' },
+  'T-3': { name: '戰神升星10顆星', price: 450, guarantee: null, cat: '戰神錦標賽' },
 };
 
 // ── VIP 等級定義 ──
@@ -1229,7 +1266,7 @@ app.post('/api/order', async (req, res) => {
     const svcGuarantee = service.guarantee;
 
     // ── 買五送一計算 ──
-    const buy5Eligible = serviceCode && (serviceCode.startsWith('E-') || serviceCode.startsWith('C-') || serviceCode === 'G-1');
+    const buy5Eligible = serviceCode && (serviceCode.startsWith('H-') || serviceCode.startsWith('R-') || serviceCode.startsWith('C-') || serviceCode === 'G-1');
     let paidQty = quantity;
     let freeQty = 0;
     if (buy5Eligible && quantity >= 5) {
