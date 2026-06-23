@@ -83,7 +83,12 @@ const referralSchema = new mongoose.Schema({
   createdAt: String,
 });
 
-let Order, Vip, Booster, Ticket, Counter, Referral;
+const boosterRegSchema = new mongoose.Schema({
+  name: { type: String, unique: true, index: true },
+  discordId: String,
+});
+
+let Order, Vip, Booster, Ticket, Counter, Referral, BoosterReg;
 let mongoReady = false;
 
 // ── 記憶體 fallback（MongoDB 連不上時使用） ──
@@ -93,6 +98,7 @@ let orderCounter = 1000;
 const dailyStats = { revenue: 0, count: 0, services: {} };
 const vipData = new Map();
 const boosterStats = new Map();
+const boosterRegistry = new Map(); // 打手名 → Discord ID（指定接單用）
 const tickets = new Map();
 let ticketCounter = 0;
 const referrals = new Map();
@@ -109,6 +115,7 @@ async function connectMongo() {
     Ticket = mongoose.model('Ticket', ticketSchema);
     Counter = mongoose.model('Counter', counterSchema);
     Referral = mongoose.model('Referral', referralSchema);
+    BoosterReg = mongoose.model('BoosterReg', boosterRegSchema);
 
     // 載入 counter
     const oc = await Counter.findOne({ key: 'order' });
@@ -130,6 +137,8 @@ async function connectMongo() {
       referrals.set(r.code, r.toObject());
       referralByContact.set(r.ownerId, r.code);
     });
+    const allRegs = await BoosterReg.find({});
+    allRegs.forEach(b => boosterRegistry.set(b.name, b.discordId));
 
     mongoReady = true;
     console.log(`✅ MongoDB 已連線 — 載入 ${allOrders.length} 訂單, ${allVip.length} VIP, ${allBoosters.length} 打手`);
@@ -170,6 +179,13 @@ async function dbSaveReferral(code, data) {
   referralByContact.set(data.ownerId, code);
   if (mongoReady) {
     await Referral.findOneAndUpdate({ code }, data, { upsert: true }).catch(e => console.error('DB save referral err:', e.message));
+  }
+}
+const BOOSTER_NAMES = ['午夜人','1號猴','CANDY','NICK','狗一波','溜溜'];
+async function dbSaveBoosterReg(name, discordId) {
+  boosterRegistry.set(name, discordId);
+  if (mongoReady) {
+    await BoosterReg.findOneAndUpdate({ name }, { name, discordId }, { upsert: true }).catch(e => console.error('DB save boosterReg err:', e.message));
   }
 }
 
@@ -375,6 +391,16 @@ client.on('messageCreate', async (msg) => {
   const args = msg.content.slice(1).trim().split(/\s+/);
   const cmd = args.shift().toLowerCase();
 
+  // ── !報到 <打手名> ── 綁定 Discord 帳號到打手名（指定接單用）
+  if (cmd === '報到') {
+    const name = args.join(' ').trim();
+    if (!name) return msg.reply('用法：`!報到 你的打手名`，例如 `!報到 CANDY`');
+    const matched = BOOSTER_NAMES.find(v => v.toLowerCase() === name.toLowerCase());
+    if (!matched) return msg.reply(`找不到打手名「${name}」。可用：${BOOSTER_NAMES.join('、')}`);
+    await dbSaveBoosterReg(matched, msg.author.id);
+    return msg.reply(`✅ **${matched}** 報到成功！日後客人指定 ${matched} 的訂單將只有你能接。`);
+  }
+
   // ── !排行榜 / !leaderboard ──
   if (cmd === '排行榜' || cmd === 'leaderboard' || cmd === 'lb') {
     const sorted = [...boosterStats.entries()]
@@ -531,6 +557,12 @@ client.on('interactionCreate', async interaction => {
 
   if (action === 'accept') {
     if (order.status !== 'pending') return interaction.reply({ content: '⚠️ 此訂單已被其他打手接走', ephemeral: true });
+    if (order.preferredBooster) {
+      const wantedId = boosterRegistry.get(order.preferredBooster);
+      if (wantedId && interaction.user.id !== wantedId) {
+        return interaction.reply({ content: `⚠️ 此單指定由 ${order.preferredBooster} 接單，你無法接此單。`, ephemeral: true });
+      }
+    }
     order.status = 'active'; order.booster = interaction.user.tag; order.boosterId = interaction.user.id; order.acceptedAt = new Date().toISOString();
     await dbSaveOrder(order);
     await interaction.deferUpdate();
@@ -1251,6 +1283,7 @@ app.post('/api/order', async (req, res) => {
       return res.status(429).json({ error: '下單太頻繁，請稍後再試（或直接加 LINE 下單）' });
     }
     const { serviceCode, gameId, contactId, airplane, map, note, customerName, referralCode } = req.body;
+    const preferredBooster = (req.body.preferredBooster && BOOSTER_NAMES.includes(req.body.preferredBooster)) ? req.body.preferredBooster : null;
 
     // ── 輸入驗證 ──
     if (!serviceCode || !SERVICES[serviceCode]) {
@@ -1320,6 +1353,7 @@ app.post('/api/order', async (req, res) => {
       note: note || '無', customerName: customerName || '網站老闆',
       status: 'pending', createdAt: new Date().toISOString(),
       booster: null, boosterId: null, acceptedAt: null, completedAt: null,
+      preferredBooster,
       referralCode: referralApplied ? referralApplied.code : null,
       vipTier, vipDiscount: vipDiscount < 1 ? vipDiscount : null,
     };
@@ -1331,8 +1365,15 @@ app.post('/api/order', async (req, res) => {
         const boosterRole = guild.roles.cache.find(r => r.name === 'Booster');
         const qtyInfo = order.quantity > 1 ? ` x${order.quantity}${order.freeQuantity > 0 ? `（付${order.paidQuantity}+送${order.freeQuantity}）` : ''}` : '';
         const vipInfo = order.vipTier ? `\n👑 VIP ${order.vipTier}（${Math.round(order.vipDiscount*100)}%折）` : '';
-        const embed = new EmbedBuilder().setColor(0x00e5ff).setTitle(`🔔 新訂單 #${orderId}`)
-          .setDescription((boosterRole ? `<@&${boosterRole.id}> 有新單！` : '有新訂單！') + vipInfo)
+        let headDesc;
+        if (order.preferredBooster) {
+          const pid = boosterRegistry.get(order.preferredBooster);
+          headDesc = `🎯 此單指定 **${order.preferredBooster}** 接單${pid ? `（<@${pid}>）` : '（該打手尚未報到，暫時開放任何打手接）'}，僅本人可接！`;
+        } else {
+          headDesc = boosterRole ? `<@&${boosterRole.id}> 有新單！` : '有新訂單！';
+        }
+        const embed = new EmbedBuilder().setColor(order.preferredBooster ? 0xfbbf24 : 0x00e5ff).setTitle(`🔔 新訂單 #${orderId}`)
+          .setDescription(headDesc + vipInfo)
           .addFields({ name: '🛡️ 服務', value: order.serviceName + qtyInfo, inline: true },{ name: '💰 金額', value: `${order.price.toLocaleString()} T`, inline: true },{ name: '🎯 保底', value: order.guarantee || '無', inline: true },{ name: '🎮 遊戲ID', value: order.gameId, inline: true },{ name: '✈️ 飛機', value: order.airplane, inline: true },{ name: '🗺️ 地圖', value: order.map, inline: true },{ name: '📝 備註', value: order.note })
           .setFooter({ text: '點擊下方按鈕接單' }).setTimestamp();
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`accept_${orderId}`).setLabel('🎮 接下此單').setStyle(ButtonStyle.Primary));
@@ -1342,7 +1383,7 @@ app.post('/api/order', async (req, res) => {
     }
     const tgQty = order.quantity > 1 ? `\n數量：${order.quantity}（付${order.paidQuantity}${order.freeQuantity > 0 ? `+送${order.freeQuantity}` : ''}）` : '';
     const tgVip = order.vipTier ? `\n👑 VIP ${order.vipTier}（${Math.round(order.vipDiscount*100)}%折）` : '';
-    await sendTelegram(`🔔 新訂單 #${orderId}\n服務：${order.serviceName}\n金額：${order.price.toLocaleString()} T${order.originalPrice !== order.price ? `（原價 ${order.originalPrice.toLocaleString()} T）` : ''}${tgQty}${tgVip}\n保底：${order.guarantee || '無'}\n遊戲ID：${order.gameId}\n聯繫：${order.contactId}${referralApplied ? `\n🤝 推薦碼：${referralApplied.code}（推薦人：${referralApplied.referrerName}）` : ''}`);
+    await sendTelegram(`🔔 新訂單 #${orderId}\n服務：${order.serviceName}\n金額：${order.price.toLocaleString()} T${order.originalPrice !== order.price ? `（原價 ${order.originalPrice.toLocaleString()} T）` : ''}${tgQty}${tgVip}${order.preferredBooster ? `\n🎯 指定打手：${order.preferredBooster}` : ''}\n保底：${order.guarantee || '無'}\n遊戲ID：${order.gameId}\n聯繫：${order.contactId}${referralApplied ? `\n🤝 推薦碼：${referralApplied.code}（推薦人：${referralApplied.referrerName}）` : ''}`);
     await sendLineOrderNotify(order);
     res.json({ success: true, orderId, message: `訂單 ${orderId} 已建立`, referral: referralApplied, vipTier: order.vipTier, vipDiscount: order.vipDiscount, totalPrice: order.price, quantity: order.quantity, paidQuantity: order.paidQuantity, freeQuantity: order.freeQuantity });
   } catch (e) { console.error('訂單錯誤:', e); res.status(500).json({ error: '伺服器錯誤' }); }
