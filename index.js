@@ -237,7 +237,7 @@ const SERVICES = {
   'R-2': { name: '單局撤離 500萬', price: 500, guarantee: '500萬', cat: '護航' },
   'R-3': { name: '單局撤離 700萬', price: 800, guarantee: '700萬', cat: '護航' },
   'R-4': { name: '單局撤離 1000萬', price: 1200, guarantee: '1,000萬', cat: '護航' },
-  'R-5': { name: '單局撤離 1300萬', price: 1600, guarantee: '1,300萬', cat: '護航' },
+  'R-5': { name: '單局撤離 1300萬', price: 3000, guarantee: '1,300萬', cat: '護航' },
   'R-6': { name: '護航包 3H', price: 3600, guarantee: null, cat: '護航' },
   // 清圖
   'C-1': { name: '電台清圖', price: 520, guarantee: null, cat: '清圖' },
@@ -293,8 +293,8 @@ const SERVICES = {
 const VIP_TIERS = [
   { min: 200000, name: 'Legend', discount: 0.80, emoji: '👑', color: 0xec4899 },
   { min: 100000, name: 'Diamond', discount: 0.85, emoji: '💎', color: 0x00e5ff },
-  { min: 40000, name: 'Gold', discount: 0.90, emoji: '🥇', color: 0xffd700 },
-  { min: 15000, name: 'Silver', discount: 0.95, emoji: '🥈', color: 0xc0c0c0 },
+  { min: 65000, name: 'Gold', discount: 0.90, emoji: '🥇', color: 0xffd700 },
+  { min: 30000, name: 'Silver', discount: 0.95, emoji: '🥈', color: 0xc0c0c0 },
   { min: 5000, name: 'Bronze', discount: 0.97, emoji: '🥉', color: 0xcd7f32 },
   { min: 0, name: 'Rookie', discount: 1.0, emoji: '🆕', color: 0x6b7280 },
 ];
