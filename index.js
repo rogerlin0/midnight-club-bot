@@ -254,7 +254,8 @@ const SERVICES = {
   // 對賭
   'G-1': { name: '單局單大金', price: 550, guarantee: null, cat: '對賭' },
   'G-2': { name: '指定任意大金', price: 5400, guarantee: null, cat: '對賭' },
-  'G-3': { name: '雙大金保險局', price: 1200, guarantee: null, cat: '對賭' },
+  'G-3': { name: '雙大金保險局', price: 2200, guarantee: null, cat: '對賭' },
+  'G-5': { name: '絕命大金單(只要大金)', price: 300, guarantee: null, cat: '對賭' },
   // 特殊地圖
   'S-1': { name: '機密文件', price: 4100, guarantee: '6,888萬', cat: '特殊地圖' },
   'S-2': { name: '理想國', price: 2680, guarantee: '3,999萬', cat: '特殊地圖' },
