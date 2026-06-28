@@ -88,7 +88,12 @@ const boosterRegSchema = new mongoose.Schema({
   discordId: String,
 });
 
-let Order, Vip, Booster, Ticket, Counter, Referral, BoosterReg;
+const custThreadSchema = new mongoose.Schema({
+  contactId: { type: String, unique: true, index: true },
+  threadId: String,
+});
+
+let Order, Vip, Booster, Ticket, Counter, Referral, BoosterReg, CustThread;
 let mongoReady = false;
 
 // ── 記憶體 fallback（MongoDB 連不上時使用） ──
@@ -99,6 +104,7 @@ const dailyStats = { revenue: 0, count: 0, services: {} };
 const vipData = new Map();
 const boosterStats = new Map();
 const boosterRegistry = new Map(); // 打手名 → Discord ID（指定接單用）
+const customerThreads = new Map(); // 聯繫ID → 客戶紀錄討論串ID
 const tickets = new Map();
 let ticketCounter = 0;
 const referrals = new Map();
@@ -116,6 +122,7 @@ async function connectMongo() {
     Counter = mongoose.model('Counter', counterSchema);
     Referral = mongoose.model('Referral', referralSchema);
     BoosterReg = mongoose.model('BoosterReg', boosterRegSchema);
+    CustThread = mongoose.model('CustThread', custThreadSchema);
 
     // 載入 counter
     const oc = await Counter.findOne({ key: 'order' });
@@ -139,6 +146,8 @@ async function connectMongo() {
     });
     const allRegs = await BoosterReg.find({});
     allRegs.forEach(b => boosterRegistry.set(b.name, b.discordId));
+    const allCT = await CustThread.find({});
+    allCT.forEach(c => customerThreads.set(c.contactId, c.threadId));
 
     mongoReady = true;
     console.log(`✅ MongoDB 已連線 — 載入 ${allOrders.length} 訂單, ${allVip.length} VIP, ${allBoosters.length} 打手`);
@@ -187,6 +196,40 @@ async function dbSaveBoosterReg(name, discordId) {
   if (mongoReady) {
     await BoosterReg.findOneAndUpdate({ name }, { name, discordId }, { upsert: true }).catch(e => console.error('DB save boosterReg err:', e.message));
   }
+}
+async function dbSaveCustThread(contactId, threadId) {
+  customerThreads.set(contactId, threadId);
+  if (mongoReady) {
+    await CustThread.findOneAndUpdate({ contactId }, { contactId, threadId }, { upsert: true }).catch(e => console.error('DB save custThread err:', e.message));
+  }
+}
+// 核准入帳時：把訂單記進該客戶的專屬討論串（內部帳本，僅老闆/打手可見）
+async function logCustomerOrder(guild, order) {
+  try {
+    if (!guild || !channels.custLedger || !order.contactId || order.contactId === '未填') return;
+    const parent = guild.channels.cache.get(channels.custLedger);
+    if (!parent) return;
+    let thread = customerThreads.get(order.contactId) ? await parent.threads.fetch(customerThreads.get(order.contactId)).catch(() => null) : null;
+    if (!thread) {
+      thread = await parent.threads.create({ name: `🧾 ${(order.customerName || order.contactId).slice(0, 40)}`, autoArchiveDuration: 10080, reason: '客戶訂單紀錄' });
+      await dbSaveCustThread(order.contactId, thread.id);
+      await thread.send(`📒 **客戶專屬紀錄** — 聯繫ID：\`${order.contactId}\``);
+    }
+    const vip = vipData.get(order.contactId);
+    const total = vip ? vip.totalSpent : order.price;
+    const cnt = vip && vip.orders ? vip.orders.length : 1;
+    const tier = getVipTier(total);
+    const embed = new EmbedBuilder().setColor(0x8b5cf6).setTitle(`✅ ${order.id} ${order.serviceName}`)
+      .addFields(
+        { name: '金額', value: `${order.price} T`, inline: true },
+        { name: '打手', value: order.booster || '—', inline: true },
+        { name: '日期', value: new Date(order.completedAt).toLocaleString('zh-TW'), inline: true },
+        { name: '累計消費', value: `${total.toLocaleString()} T`, inline: true },
+        { name: 'VIP', value: `${tier.emoji || ''} ${tier.name}`, inline: true },
+        { name: '累計訂單', value: `${cnt} 筆`, inline: true },
+      ).setTimestamp();
+    await thread.send({ embeds: [embed] });
+  } catch (e) { console.error('logCustomerOrder err:', e.message); }
 }
 
 // ── 推薦里程碑定義 ──
@@ -698,6 +741,7 @@ client.on('interactionCreate', async interaction => {
         compCh.send({ embeds: [compEmbed] });
       }
     }
+    await logCustomerOrder(guild, order);
     await sendTelegram(`✅ 訂單 #${id} 已完成\n服務：${order.serviceName}\n金額：${order.price} T\n打手：${order.booster}\n耗時：${getTimeDiff(order.acceptedAt, order.completedAt)}`);
   }
 
@@ -873,6 +917,7 @@ async function setupChannels(guild) {
     { key: 'boosterChat', name: '💬｜打手聊天', cat: 'catInternal' },
     { key: 'dailyStats', name: '📊｜每日報表', cat: 'catInternal' },
     { key: 'adminLog', name: '📋｜管理日誌', cat: 'catInternal' },
+    { key: 'custLedger', name: '📒｜客戶訂單紀錄', cat: 'catInternal' },
 
     // ─── 🔊 語音頻道（分層權限） ───
     // 公開 — 所有人可進
