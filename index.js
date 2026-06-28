@@ -585,6 +585,35 @@ client.on('interactionCreate', async interaction => {
 
   if (action === 'done') {
     if (order.boosterId !== interaction.user.id) return interaction.reply({ content: '❌ 只有接單打手可以完成此訂單', ephemeral: true });
+    if (order.status !== 'active') return interaction.reply({ content: '⚠️ 訂單狀態不正確', ephemeral: true });
+    order.status = 'review'; order.reviewAt = new Date().toISOString();
+    await dbSaveOrder(order);
+    try { await interaction.message.delete(); } catch(e) {}
+    const dRef = orderMessages.get(id);
+    if (dRef && dRef.newOrder) { try { const nCh = guild.channels.cache.get(dRef.newOrder.channelId); if (nCh) { const m = await nCh.messages.fetch(dRef.newOrder.messageId); await m.delete(); } } catch(e) {} }
+    if (channels.completed) {
+      const cCh = guild.channels.cache.get(channels.completed);
+      if (cCh) {
+        const rEmbed = new EmbedBuilder().setColor(0xfbbf24).setTitle(`⏳ 訂單 #${id} 待核准入帳`).setDescription('打手回報完成，**待老闆核准後才會計入報表/營收**。').addFields({ name: '服務', value: order.serviceName, inline: true },{ name: '金額', value: `${order.price} T`, inline: true },{ name: '打手', value: order.booster, inline: true },{ name: '聯繫', value: order.contactId || '未填', inline: true }).setTimestamp();
+        const rRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`approve_${id}`).setLabel('✅ 核准入帳').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`reject_${id}`).setLabel('❌ 退回').setStyle(ButtonStyle.Danger));
+        await cCh.send({ embeds: [rEmbed], components: [rRow] });
+      }
+    }
+    return interaction.reply({ content: `✅ 已回報完成，訂單 #${id} 待老闆核准入帳。`, ephemeral: true });
+  }
+
+  if (action === 'reject') {
+    const isBoss = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) || (interaction.member && interaction.member.roles.cache.some(r => r.name === 'Boss'));
+    if (!isBoss) return interaction.reply({ content: '⚠️ 只有老闆/管理員可以審核訂單。', ephemeral: true });
+    order.status = 'cancelled'; await dbSaveOrder(order);
+    return interaction.update({ content: `❌ 訂單 #${id} 已退回（不計入報表）。`, embeds: [], components: [] });
+  }
+
+  if (action === 'approve') {
+    const isBoss = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) || (interaction.member && interaction.member.roles.cache.some(r => r.name === 'Boss'));
+    if (!isBoss) return interaction.reply({ content: '⚠️ 只有老闆/管理員可以核准入帳。', ephemeral: true });
+    if (order.status !== 'review') return interaction.reply({ content: '⚠️ 此訂單不在待審核狀態。', ephemeral: true });
+    await interaction.deferUpdate().catch(()=>{});
     order.status = 'completed'; order.completedAt = new Date().toISOString();
     await dbSaveOrder(order);
     dailyStats.revenue += order.price; dailyStats.count += 1; dailyStats.services[order.serviceCode] = (dailyStats.services[order.serviceCode] || 0) + 1;
