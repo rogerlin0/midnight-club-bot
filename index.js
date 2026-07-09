@@ -306,7 +306,7 @@ const SERVICES = {
   'S-4': { name: '北山深入護送', price: 1800, guarantee: null, cat: '特殊地圖' },
   'S-5': { name: '五大地圖全制霸', price: 11000, guarantee: null, cat: '特殊地圖' },
   // 代肝
-  'A-1': { name: 'S5 3x3代肝', price: 2800, guarantee: null, cat: '代肝' },
+  'A-1': { name: 'S6 3x3代肝', price: 2800, guarantee: null, cat: '代肝' },
   'A-2': { name: '五天託管代肝', price: 7500, guarantee: null, cat: '代肝' },
   'A-4': { name: '聲望/等級代練', price: 600, guarantee: null, cat: '代肝' },
   // 陪玩
