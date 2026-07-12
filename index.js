@@ -789,7 +789,7 @@ async function syncPricesToDiscord(guild) {
   } catch(e) {}
 
   const e1 = new EmbedBuilder().setColor(0x00e5ff).setTitle('🛡️ 護航單（包鑰匙·不卡保底·無封頂·追繳三重賠付）')
-    .setDescription(Object.entries(SERVICES).filter(([,s]) => s.cat === '護航').map(([k,s]) => `**${k}** ${s.name} — **${s.price.toLocaleString()}T** ${s.guarantee ? `→ 保底 ${s.guarantee}` : ''}`).join('\n') + '\n\n🎁 護航買五送一！');
+    .setDescription(Object.entries(SERVICES).filter(([,s]) => s.cat === '護航').map(([k,s]) => `**${k}** ${s.name} — **${s.price.toLocaleString()}T** ${s.guarantee ? `→ 保底 ${s.guarantee}` : ''}`).join('\n') + '\n\n🎁 單局撤離(R系列)買五送一！');
   const e2 = new EmbedBuilder().setColor(0xfbbf24).setTitle('🧹 清圖 · 🎲 摸保險 · 💰 對賭')
     .setDescription(
       '**清圖：**\n' + Object.entries(SERVICES).filter(([,s]) => s.cat === '清圖').map(([k,s]) => `${k} ${s.name} — **${s.price.toLocaleString()}T**/局`).join('\n') +
@@ -1312,7 +1312,7 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Origin', 'https://midnight-club.roger96141.workers.dev');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
@@ -1374,7 +1374,7 @@ app.post('/api/order', async (req, res) => {
     const svcGuarantee = service.guarantee;
 
     // ── 買五送一計算 ──
-    const buy5Eligible = serviceCode && (serviceCode.startsWith('H-') || serviceCode.startsWith('R-') || serviceCode.startsWith('C-') || serviceCode === 'G-1');
+    const buy5Eligible = serviceCode && (serviceCode.startsWith('R-') || serviceCode.startsWith('C-') || serviceCode === 'G-1');  // 護航累積價值單(H-)不送；單局撤離(R-)、清圖(C-)、搬金(G-1)才送
     let paidQty = quantity;
     let freeQty = 0;
     if (buy5Eligible && quantity >= 5) {
@@ -1464,11 +1464,23 @@ app.post('/api/order', async (req, res) => {
   } catch (e) { console.error('訂單錯誤:', e); res.status(500).json({ error: '伺服器錯誤' }); }
 });
 
-app.get('/api/order/:id', (req, res) => { const order = orders.get(req.params.id); if (!order) return res.status(404).json({ error: '找不到訂單' }); res.json(order); });
-app.get('/api/orders', (req, res) => { res.json([...orders.values()].reverse()); });
+app.get('/api/order/:id', (req, res) => {
+  const order = orders.get(req.params.id);
+  if (!order) return res.status(404).json({ error: '找不到訂單' });
+  // 只回傳進度資訊，移除客人個資(遊戲ID/聯絡方式/客名/備註)避免枚舉外洩
+  const safe = JSON.parse(JSON.stringify(order));
+  delete safe.gameId; delete safe.contactId; delete safe.customerName; delete safe.note; delete safe.boosterId;
+  if (safe.booster) safe.booster = safe.booster.replace(/(.{1}).*/, '$1***');
+  res.json(safe);
+});
+// ⚠️ 管理員專用：需在 Railway 設 ADMIN_KEY，並帶 ?key=<ADMIN_KEY> 才能存取
+app.get('/api/orders', (req, res) => {
+  if (!process.env.ADMIN_KEY || req.query.key !== process.env.ADMIN_KEY) return res.status(403).json({ error: 'forbidden' });
+  res.json([...orders.values()].reverse());
+});
 app.get('/api/stats', (req, res) => {
   const all = [...orders.values()];
-  res.json({ total: all.length, pending: all.filter(o => o.status === 'pending').length, active: all.filter(o => o.status === 'active').length, completed: all.filter(o => o.status === 'completed').length, totalRevenue: all.filter(o => o.status === 'completed').reduce((s, o) => s + o.price, 0) });
+  res.json({ total: all.length, pending: all.filter(o => o.status === 'pending').length, active: all.filter(o => o.status === 'active').length, completed: all.filter(o => o.status === 'completed').length }); // 移除 totalRevenue：不對外公開營收
 });
 
 app.get('/api/live-orders', (req, res) => {
@@ -1500,10 +1512,10 @@ app.get('/api/vip/:contactId', (req, res) => {
 app.get('/api/services', (req, res) => { res.json(SERVICES); });
 app.get('/api/leaderboard', (req, res) => {
   const sorted = [...boosterStats.entries()].sort((a, b) => b[1].completed - a[1].completed).slice(0, 10)
-    .map(([tag, s], i) => ({ rank: i + 1, name: tag, completed: s.completed, revenue: s.revenue }));
+    .map(([tag, s], i) => ({ rank: i + 1, name: tag, completed: s.completed })); // 移除 revenue：不公開打手營收
   res.json(sorted);
 });
-app.get('/api/tickets', (req, res) => { res.json([...tickets.values()].reverse().slice(0, 20)); });
+app.get('/api/tickets', (req, res) => { if (!process.env.ADMIN_KEY || req.query.key !== process.env.ADMIN_KEY) return res.status(403).json({ error: 'forbidden' }); res.json([...tickets.values()].reverse().slice(0, 20)); });
 
 // ============================================================
 // 🤝 推薦系統 API
