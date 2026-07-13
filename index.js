@@ -1309,7 +1309,7 @@ cron.schedule('0 9 1 * *', async () => {
 // Express API
 // ============================================================
 const app = express();
-app.use(express.json());
+app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } })); // 保留原始 body 供 LINE 驗簽用
 app.use(express.urlencoded({ extended: true }));
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', 'https://midnight-club.roger96141.workers.dev');
@@ -1322,6 +1322,9 @@ app.use((req, res, next) => {
 // ── LINE Webhook ──
 app.post('/webhook/line', (req, res) => {
   res.status(200).end();
+  // 驗證 x-line-signature：確保事件真的來自 LINE，擋掉偽造請求
+  const sig = req.headers['x-line-signature'];
+  if (LINE_SECRET && (!sig || !req.rawBody || !line.validateSignature(req.rawBody, LINE_SECRET, sig))) return;
   if (req.body && req.body.events) {
     for (const event of req.body.events) { handleLineEvent(event); }
   }
