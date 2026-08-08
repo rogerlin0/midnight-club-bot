@@ -412,7 +412,7 @@ client.on('guildMemberAdd', async (member) => {
           '🎁 **新手推薦：扶貧單 350T 起！**\n' +
           '💰 查看報價：到 `💰｜報價表` 頻道\n' +
           '📝 下單方式：加 LINE **23roger02** 報編號\n\n' +
-          '🛡️ 追繳三重賠付 · 純綠玩 · 全程可直播'
+          '🛡️ 雙倍追繳賠付 · 純綠玩 · 全程可直播'
         );
       await member.send({ embeds: [welcomeEmbed] });
     } catch (e) { /* DM可能被關閉 */ }
@@ -788,7 +788,7 @@ async function syncPricesToDiscord(guild) {
     if (oldMsgs.size > 0) await pCh.bulkDelete(oldMsgs).catch(() => {});
   } catch(e) {}
 
-  const e1 = new EmbedBuilder().setColor(0x00e5ff).setTitle('🛡️ 護航單（包鑰匙·不卡保底·無封頂·追繳三重賠付）')
+  const e1 = new EmbedBuilder().setColor(0x00e5ff).setTitle('🛡️ 護航單（包鑰匙·不卡保底·無封頂·雙倍追繳賠付）')
     .setDescription(Object.entries(SERVICES).filter(([,s]) => s.cat === '護航').map(([k,s]) => `**${k}** ${s.name} — **${s.price.toLocaleString()}T** ${s.guarantee ? `→ 保底 ${s.guarantee}` : ''}`).join('\n') + '\n\n🎁 單局撤離(R系列)買五送一！');
   const e2 = new EmbedBuilder().setColor(0xfbbf24).setTitle('🧹 清圖 · 🎲 摸保險 · 💰 對賭')
     .setDescription(
@@ -803,7 +803,7 @@ async function syncPricesToDiscord(guild) {
       '\n\n**陪玩：**\n' + Object.entries(SERVICES).filter(([,s]) => s.cat === '陪玩').map(([k,s]) => `${k} ${s.name} — **${s.price.toLocaleString()}T**`).join('\n')
     );
   const e4 = new EmbedBuilder().setColor(0x34d399).setTitle('🎁 扶貧單 + 📋 下單方式')
-    .setDescription('**扶貧單（每週限一次）：**\nA方案 **350T** → 保底 700萬\nB方案 **700T** → 保底 1,500萬\n\n━━━━━━━━━━━━━━\n**報編號就能下單！**\n加 LINE：**23roger02**\n🔥 追繳三重賠付：全額退 + 1000T + 2625點卷');
+    .setDescription('**扶貧單（每週限一次）：**\nA方案 **350T** → 保底 700萬\nB方案 **700T** → 保底 1,500萬\n\n━━━━━━━━━━━━━━\n**報編號就能下單！**\n加 LINE：**23roger02**\n🔥 雙倍追繳賠付：本單退50% + 雙倍賠付追繳損失');
 
   await pCh.send({ embeds: [e1, e2, e3, e4] });
   console.log('✅ 報價表已同步到 Discord');
@@ -1089,7 +1089,7 @@ async function handleLineEvent(event) {
   } else if (/VIP|折扣|等級|優惠/.test(text)) {
     reply = { type: 'text', text: `👑 VIP 制度\n\n🥉 銅牌 5,000T → 98折\n🥈 銀牌 15,000T → 97折\n🥇 金牌 40,000T → 95折\n💎 鑽石 100,000T → 93折\n🏆 傳說 200,000T → 92折\n\n🔗 查詢：${SITE}/#myvip` };
   } else if (/打手|代練|介紹/.test(text)) {
-    reply = { type: 'text', text: `🎮 打手陣容\n\n✅ 自家培訓不外聘\n✅ 全程可直播\n✅ 追繳三重賠付\n📊 3,000+單 | ⭐ 99%滿意度\n\n🔗 ${SITE}/#players` };
+    reply = { type: 'text', text: `🎮 打手陣容\n\n✅ 自家培訓不外聘\n✅ 全程可直播\n✅ 雙倍追繳賠付\n📊 3,000+單 | ⭐ 99%滿意度\n\n🔗 ${SITE}/#players` };
   } else if (/進度|我的單|查詢訂單/.test(text)) {
     reply = { type: 'text', text: `📦 查詢訂單進度\n\n請提供：\n1. 你的遊戲 ID\n2. LINE/Discord ID\n\n我們會盡快回覆！\n🔗 ${SITE}/#myvip` };
   }
@@ -1123,7 +1123,7 @@ cron.schedule('0 10 * * *', async () => {
       `服務：${deal.code} ${svc.name}\n` +
       `優惠：**${deal.discount}**\n\n` +
       `⏰ 僅限今日！加 LINE **23roger02** 報編號 + 說「今日優惠」\n` +
-      `🛡️ 追繳三重賠付照樣適用`
+      `🛡️ 雙倍追繳賠付照樣適用`
     )
     .setFooter({ text: '午夜俱樂部 · 每日一檔限時優惠' })
     .setTimestamp();
